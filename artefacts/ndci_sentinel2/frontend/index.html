@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NDCI — Lagoas do Litoral Norte RS</title>
+  <link rel="stylesheet" href="/static/css/app.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+</head>
+<body>
+
+<!-- ── Header ─────────────────────────────────────────────────────────────── -->
+<header class="header">
+  <div class="header-brand">
+    <h1>NDCI — Qualidade da Água</h1>
+    <div class="subtitle">Lagoas do Litoral Norte RS · Sentinel-2 / GEE</div>
+  </div>
+  <div class="header-right">
+    <span id="db-status">carregando…</span>
+    <button id="reload-btn" class="btn" title="Recarregar dados">↺ Atualizar</button>
+  </div>
+</header>
+
+<!-- ── Loading ────────────────────────────────────────────────────────────── -->
+<div id="loading" class="loading" style="height:60vh">
+  <div class="spinner"></div> Carregando dados…
+</div>
+
+<!-- ── App shell ──────────────────────────────────────────────────────────── -->
+<div id="content" style="display:none">
+
+  <!-- Tab navigation -->
+  <nav class="tab-nav">
+    <button class="tab-btn active" data-tab="dashboard">
+      <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+        <path d="M1 11h3v4H1zm5-5h3v9H6zm5-5h3v14h-3z"/>
+      </svg>
+      Dashboard
+    </button>
+    <button class="tab-btn" data-tab="table">
+      <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+        <path d="M0 2a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2zm2 3v3h5V5zm6 0v3h6V5zm6 4H8v3h6zm-7 0H2v3h5z"/>
+      </svg>
+      Dados
+    </button>
+  </nav>
+
+  <!-- ── Dashboard tab ──────────────────────────────────────────────────── -->
+  <div id="tab-dashboard" class="tab-panel">
+
+    <!-- Empty state -->
+    <div id="empty-msg" class="empty-state" style="display:none">
+      <span class="empty-icon">🌊</span>
+      <span>Nenhum dado no banco ainda.</span>
+      <code>POST /api/workers/collect-stats?ano_inicio=2017</code>
+    </div>
+
+    <!-- KPIs -->
+    <section>
+      <div class="section-title">Status atual por lagoa</div>
+      <div id="kpi-grid" class="kpi-grid"></div>
+    </section>
+
+    <!-- Série temporal -->
+    <section class="card">
+      <div class="chart-header">
+        <span class="card-title">Série temporal — NDCI médio mensal</span>
+        <div class="chart-controls">
+          <select id="lagoa-select" class="lagoa-select"></select>
+          <div class="legend-alerts">
+            <span class="la-bom">Bom &lt;0.02</span>
+            <span class="la-moderado">Moderado 0.02–0.10</span>
+            <span class="la-elevado">Elevado 0.10–0.20</span>
+            <span class="la-critico">Crítico &gt;0.20</span>
+          </div>
+        </div>
+      </div>
+      <div class="chart-wrap" style="height:300px">
+        <canvas id="chart-series"></canvas>
+      </div>
+      <div id="point-detail" class="point-detail"></div>
+    </section>
+
+    <!-- Índices + Comparação -->
+    <div class="chart-grid-2">
+      <div class="card">
+        <div class="chart-header">
+          <span class="card-title">Turbidez (NDTI) e Disponib. Hídrica (NDWI)</span>
+        </div>
+        <div class="chart-wrap" style="height:260px">
+          <canvas id="chart-indices"></canvas>
+        </div>
+      </div>
+      <div class="card">
+        <div class="chart-header">
+          <span class="card-title">Comparação entre lagoas — NDCI</span>
+        </div>
+        <div class="chart-wrap" style="height:260px">
+          <canvas id="chart-compare"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- Sazonalidade + Distribuição -->
+    <div class="chart-grid-2">
+      <div class="card">
+        <div class="chart-header">
+          <span class="card-title">Sazonalidade — NDCI médio por mês do ano</span>
+        </div>
+        <div class="chart-wrap" style="height:260px">
+          <canvas id="chart-seasonal"></canvas>
+        </div>
+      </div>
+      <div class="card">
+        <div class="chart-header">
+          <span class="card-title">Distribuição por faixa de alerta</span>
+        </div>
+        <div class="chart-wrap" style="height:260px">
+          <canvas id="chart-dist"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- Scatter -->
+    <section class="card">
+      <div class="chart-header">
+        <span class="card-title">NDCI × Turbidez (NDTI) — Correlação por lagoa</span>
+      </div>
+      <div class="chart-wrap" style="height:280px">
+        <canvas id="chart-scatter"></canvas>
+      </div>
+    </section>
+
+  </div><!-- /tab-dashboard -->
+
+  <!-- ── Table tab ──────────────────────────────────────────────────────── -->
+  <div id="tab-table" class="tab-panel" style="display:none">
+
+    <section class="card">
+
+      <!-- Title + count -->
+      <div class="table-section-title">
+        <span class="card-title">Registros de qualidade da água</span>
+        <span id="record-count" class="count-badge"></span>
+      </div>
+
+      <!-- Filters -->
+      <div class="table-filters">
+        <div class="filter-item filter-search">
+          <svg class="filter-icon" width="13" height="13" viewBox="0 0 16 16" fill="currentColor">
+            <path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398l3.85 3.85a1 1 0 0 0 1.415-1.415zm-5.242 1.156a5 5 0 1 1 0-10 5 5 0 0 1 0 10"/>
+          </svg>
+          <input type="text" id="table-search" placeholder="Buscar lagoa, período, status…" />
+        </div>
+
+        <select id="filter-lagoa" title="Filtrar por lagoa">
+          <option value="">Todas as lagoas</option>
+        </select>
+
+        <select id="filter-status" title="Filtrar por status">
+          <option value="">Todos os status</option>
+          <option value="bom">Bom</option>
+          <option value="moderado">Moderado</option>
+          <option value="elevado">Elevado</option>
+          <option value="critico">Crítico</option>
+          <option value="sem_dados">Sem dados</option>
+        </select>
+
+        <div class="filter-year-range">
+          <span class="filter-label">Ano</span>
+          <input type="number" id="filter-ano-de"  placeholder="De"   min="2017" max="2030" />
+          <span class="filter-sep">—</span>
+          <input type="number" id="filter-ano-ate" placeholder="Até"  min="2017" max="2030" />
+        </div>
+
+        <button id="clear-filters" class="btn btn-ghost">
+          <svg width="10" height="10" viewBox="0 0 12 12" fill="currentColor">
+            <path d="M6 4.586 1.707.293.293 1.707 4.586 6 .293 10.293l1.414 1.414L6 7.414l4.293 4.293 1.414-1.414L7.414 6l4.293-4.293L10.293.293z"/>
+          </svg>
+          Limpar filtros
+        </button>
+      </div>
+
+      <!-- Table -->
+      <div class="table-wrap">
+        <table>
+          <thead id="table-head">
+            <tr>
+              <th data-col="lagoa">Lagoa</th>
+              <th data-col="periodo" class="sort-desc">Período</th>
+              <th data-col="ndci_mean">NDCI médio</th>
+              <th data-col="ndci_p90">NDCI p90</th>
+              <th data-col="turbidez">Turbidez (NDTI)</th>
+              <th data-col="ndwi_mean">NDWI</th>
+              <th data-col="n_pixels">Pixels</th>
+              <th data-col="status">Status</th>
+            </tr>
+          </thead>
+          <tbody id="table-body"></tbody>
+        </table>
+      </div>
+
+      <!-- Pagination footer -->
+      <div class="table-footer">
+        <div class="page-size-wrap">
+          <span class="filter-label">Linhas por página</span>
+          <select id="page-size">
+            <option value="10">10</option>
+            <option value="25" selected>25</option>
+            <option value="50">50</option>
+            <option value="100">100</option>
+          </select>
+        </div>
+        <div class="pagination-wrap">
+          <span id="pg-info" class="pg-info"></span>
+          <div id="pagination" class="pagination"></div>
+        </div>
+      </div>
+
+    </section>
+  </div><!-- /tab-table -->
+
+</div><!-- /content -->
+
+<script type="module" src="/static/js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,45 @@
+services:
+
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB:       ${POSTGRES_DB:-ndci}
+      POSTGRES_USER:     ${POSTGRES_USER:-ndci}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ndci}
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ./migrations/001_water_quality.sql:/docker-entrypoint-initdb.d/01_water_quality.sql:ro
+      - ./migrations/002_map_tiles.sql:/docker-entrypoint-initdb.d/02_map_tiles.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ndci} -d ${POSTGRES_DB:-ndci}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    ports:
+      - "5433:5432"   # 5433 no host para não conflitar com Postgres local
+
+  api:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-ndci}:${POSTGRES_PASSWORD:-ndci}@db:5432/${POSTGRES_DB:-ndci}
+      GEE_PROJECT:  ${GEE_PROJECT:-acontece-osorio}
+      # Monte sua chave GEE via volume (veja .env.example)
+      GEE_SERVICE_ACCOUNT_KEY: /run/secrets/gee_key
+    secrets:
+      - gee_key
+    ports:
+      - "8001:8001"
+    volumes:
+      - .:/app   # hot-reload em desenvolvimento (remova em produção)
+
+secrets:
+  gee_key:
+    file: ${GEE_KEY_PATH:-./credentials/gee-key.json}
+
+volumes:
+  pg_data:

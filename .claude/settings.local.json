@@ -1,0 +1,34 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(docker --version)",
+      "Bash(docker compose:*)",
+      "Bash(docker-compose --version)",
+      "Bash(curl -s http://localhost:8001/)",
+      "Bash(python -m json.tool)",
+      "Bash(curl -s http://localhost:8001/health)",
+      "Bash(curl -s http://localhost:8001/api/tiles/lagoas)",
+      "Bash(curl -s http://localhost:8001/api/water-quality/lagoas)",
+      "Bash(docker exec ndci_sentinel2-db-1:*)",
+      "Bash(curl -s -X POST \"http://localhost:8001/api/workers/collect-stats?ano_inicio=2023&ano_fim=2023&lagoa=Lagoa+do+Peixoto\")",
+      "Bash(curl -s -X POST \"http://localhost:8001/api/workers/collect-stats?ano_inicio=2017&ano_fim=2026\")",
+      "Bash(curl -s http://localhost:8001/api/workers/status)",
+      "Bash(curl -s \"http://localhost:8001/api/water-quality\")",
+      "Bash(python -c ':*)",
+      "Bash(curl -s \"http://localhost:8001/api/water-quality/current\")",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:8001/)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:8001/static/css/app.css)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:8001/static/js/app.js)",
+      "Bash(curl -s \"http://localhost:8001/api/water-quality?lagoa=Lagoa+do+Peixoto\")",
+      "Bash(curl -s \"http://localhost:8001/api/water-quality?group_by=lagoa\")",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); [print\\(k, len\\(v['periodos']\\), 'meses'\\) for k,v in d.items\\(\\)]\")",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\(type\\(d\\)\\); print\\(list\\(d.keys\\(\\)\\)[:5] if isinstance\\(d, dict\\) else d[:2]\\)\")",
+      "Bash(curl -s http://localhost:8001/static/js/charts.js)",
+      "Bash(python3 -c ':*)",
+      "Bash(curl -s -X POST \"http://localhost:8001/api/workers/collect-stats?lagoa=Lagoa%20Caconde\")",
+      "Bash(curl -s -X POST \"http://localhost:8001/api/workers/generate-tiles?lagoa=Lagoa%20Caconde\")",
+      "Bash(curl -s -o /dev/null -w \" %{http_code}\" http://localhost:8001/static/css/app.css)",
+      "Bash(curl -s -o /dev/null -w \" %{http_code}\" http://localhost:8001/static/js/table.js)"
+    ]
+  }
+}
