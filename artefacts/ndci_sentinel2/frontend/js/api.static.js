@@ -51,3 +51,7 @@ export const getWorkerStatus = async () => {
     map_tiles: { total_tiles: 0 },
   };
 };
+
+/** Tiles não disponíveis em modo estático (requer proxy GEE). */
+export const getTileAvailability = async () => { throw new Error('static'); };
+export const getTileLagoa        = async () => { throw new Error('static'); };

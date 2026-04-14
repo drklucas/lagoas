@@ -30,3 +30,11 @@ export const getLagoas = () =>
 /** Retorna { water_quality: { total_records, lagoas_com_dados }, map_tiles: { ... } } */
 export const getWorkerStatus = () =>
   fetchJSON('/api/workers/status');
+
+/** Retorna { ndci: { lagoas, periodos_mensais, total_tiles, tiles_validos }, ndti: … } */
+export const getTileAvailability = () =>
+  fetchJSON('/api/tiles/availability');
+
+/** Retorna { tile_url, bounds, vis_min, vis_max, palette, valid, … } */
+export const getTileLagoa = (indexKey, lagoa, ano, mes) =>
+  fetchJSON(`/api/tiles/lagoa/${encodeURIComponent(indexKey)}?lagoa=${encodeURIComponent(lagoa)}&ano=${ano}&mes=${mes}`);

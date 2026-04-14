@@ -870,6 +870,85 @@ tbody td.null { color: var(--muted); }
   font-weight: 500;
 }
 
+/* ── Aba Mapa ─────────────────────────────────────────────────────────────── */
+#tab-map {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - var(--header-h) - var(--tabnav-h));
+  overflow: hidden;
+}
+
+.map-controls-bar {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 8px 20px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+.map-wrap {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+#map-container {
+  width: 100%;
+  height: 100%;
+}
+
+/* Leaflet z-index fix para o header sticky */
+.leaflet-top { z-index: 80 !important; }
+
+/* Legenda overlay */
+.map-legend {
+  position: absolute;
+  bottom: 28px;
+  right: 10px;
+  z-index: 1000;
+  background: rgba(22, 27, 34, 0.92);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+  min-width: 160px;
+  backdrop-filter: blur(4px);
+  pointer-events: none;
+}
+.ml-title {
+  font-size: .68rem;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .07em;
+  margin-bottom: 7px;
+}
+.ml-bar {
+  height: 10px;
+  border-radius: 4px;
+  margin-bottom: 5px;
+}
+.ml-ticks {
+  display: flex;
+  justify-content: space-between;
+  font-size: .65rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Status / erro sobre o mapa */
+.map-status-msg {
+  font-size: .75rem;
+  color: var(--muted);
+  padding: 3px 8px;
+  white-space: nowrap;
+}
+.map-status-msg.map-status-error {
+  color: var(--elevado);
+}
+
 /* ── Scrollbar ────────────────────────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }

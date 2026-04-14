@@ -14,6 +14,7 @@ import {
 } from './charts.js';
 import { DataTable } from './table.js';
 import { initChartActions } from './chart-actions.js';
+import { initMap } from './map.js';
 
 let charts      = {};
 const table     = new DataTable();
@@ -113,7 +114,7 @@ async function renderSeriesChart() {
 // ── Tab switching ─────────────────────────────────────────────────────────────
 function initTabs() {
   document.querySelectorAll('.tab-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', async () => {
       const tab = btn.dataset.tab;
 
       document.querySelectorAll('.tab-btn').forEach(b =>
@@ -123,6 +124,13 @@ function initTabs() {
         tab === 'dashboard' ? 'flex' : 'none';
       document.getElementById('tab-table').style.display =
         tab === 'table' ? 'flex' : 'none';
+      document.getElementById('tab-map').style.display =
+        tab === 'map' ? 'flex' : 'none';
+
+      if (tab === 'map') {
+        // initMap é idempotente: na primeira chamada inicializa, nas seguintes apenas invalida o size
+        await initMap();
+      }
     });
   });
 }
