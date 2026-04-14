@@ -87,6 +87,7 @@ export class DataTable {
       this._render();
     });
     on('clear-filters', 'click', () => this._clearFilters());
+    on('export-csv',    'click', () => this._exportCsv());
     on('table-head', 'click', e => {
       const col = e.target.closest('th')?.dataset.col;
       if (col) this._setSort(col);
@@ -209,6 +210,35 @@ export class DataTable {
       this._pgInfo.textContent = total > 0 ? `${s}–${e} de ${total.toLocaleString()}` : '';
     }
     this._renderPagination(total);
+  }
+
+  // ── Export CSV ─────────────────────────────────────────────────────────────
+
+  _exportCsv() {
+    const headers = ['Lagoa', 'Período', 'NDCI médio', 'NDCI P90', 'Turbidez (NDTI)', 'NDWI', 'Pixels válidos', 'Status'];
+    const data    = this._filteredRows.map(r => [
+      r.lagoa,
+      r.periodo,
+      r.ndci_mean  ?? '',
+      r.ndci_p90   ?? '',
+      r.turbidez   ?? '',
+      r.ndwi_mean  ?? '',
+      r.n_pixels   ?? '',
+      r.status,
+    ]);
+
+    const esc  = v => `"${String(v).replace(/"/g, '""')}"`;
+    const csv  = [headers, ...data].map(row => row.map(esc).join(',')).join('\r\n');
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+
+    const lagoa    = this._filters.lagoa ? `_${this._filters.lagoa.replace(/\s+/g, '-')}` : '';
+    const filename = `ndci${lagoa}_${new Date().toISOString().slice(0, 10)}.csv`;
+
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(a.href);
   }
 
   _renderPagination(total) {
