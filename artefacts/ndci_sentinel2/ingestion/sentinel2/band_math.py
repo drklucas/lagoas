@@ -8,11 +8,17 @@ addBands(), seguindo o padrão GEE de pipelines funcionais.
   NDCI  = (B5 - B4) / (B5 + B4)   — clorofila / cianobactérias
   NDTI  = (B4 - B3) / (B4 + B3)   — turbidez
   NDWI  = (B3 - B8) / (B3 + B8)   — máscara de água / disponibilidade hídrica
+  FAI   = B8 - (B4 + (B11 - B4) × (842 - 665) / (1610 - 665))
+          — Floating Algae Index (material flutuante na superfície)
 
-Por que usar toFloat()?
-  As bandas do Sentinel-2 SR são armazenadas como Int16 no GEE.
-  A divisão inteira produziria resultados incorretos (truncados para 0 ou -1).
-  toFloat() garante divisão de ponto flutuante antes do cálculo.
+A máscara de água usa NDWI > threshold OR FAI > 0 para incluir pixels de
+bloom denso de cianobactérias que têm alta reflectância no NIR e podem ter
+NDWI levemente negativo (abaixo do threshold). O buffer negativo de borda
+(configurado por lagoa em config.py) evita que pixels de terra entrem pela
+extensão do threshold.
+
+Threshold padrão: -0.2 (relaxado de -0.1 para reter pixels de bloom).
+Referência: Pi & Guasselli (SBSR 2025).
 """
 
 from __future__ import annotations
@@ -20,38 +26,51 @@ from __future__ import annotations
 
 def add_water_indices(img):
     """
-    Adiciona NDCI, NDTI e NDWI como bandas à imagem Sentinel-2.
+    Adiciona NDCI, NDTI, NDWI e FAI como bandas à imagem Sentinel-2.
 
     Projetado para uso em ee.ImageCollection.map().
 
     Bandas utilizadas:
-      B3 — Verde  560 nm  10 m
-      B4 — Vermelho 665 nm  10 m  (reamostrado para 20 m com B5)
-      B5 — Red-Edge 705 nm  20 m  ← sensível à reflectância de clorofila
-      B8 — NIR    842 nm  10 m
+      B3  — Verde    560 nm  10 m
+      B4  — Vermelho 665 nm  10 m
+      B5  — Red-Edge 705 nm  20 m  ← sensível à reflectância de clorofila
+      B8  — NIR      842 nm  10 m
+      B11 — SWIR1   1610 nm  20 m  ← usado para FAI
     """
-    b3 = img.select("B3").toFloat()
-    b4 = img.select("B4").toFloat()
-    b5 = img.select("B5").toFloat()
-    b8 = img.select("B8").toFloat()
+    b3  = img.select("B3").toFloat()
+    b4  = img.select("B4").toFloat()
+    b5  = img.select("B5").toFloat()
+    b8  = img.select("B8").toFloat()
+    b11 = img.select("B11").toFloat()
 
     ndci = b5.subtract(b4).divide(b5.add(b4)).rename("NDCI")
     ndti = b4.subtract(b3).divide(b4.add(b3)).rename("NDTI")
     ndwi = b3.subtract(b8).divide(b3.add(b8)).rename("NDWI")
 
-    return img.addBands([ndci, ndti, ndwi])
+    # FAI: interpolação linear na linha de base NIR entre B4 (665 nm) e B11 (1610 nm)
+    nir_baseline = b4.add(
+        b11.subtract(b4).multiply((842 - 665) / (1610 - 665))
+    )
+    fai = b8.subtract(nir_baseline).rename("FAI")
+
+    return img.addBands([ndci, ndti, ndwi, fai])
 
 
-def water_mask(composite, threshold: float = -0.1):
+def water_mask(composite, threshold: float = -0.2):
     """
-    Cria máscara de água a partir de uma imagem composta.
+    Cria máscara de água combinando NDWI e FAI.
 
-    Pixels com NDWI <= threshold são considerados terra e descartados.
-    Retorna a imagem composta com apenas pixels de água visíveis.
+    Lógica: pixels com (NDWI > threshold) OR (FAI > 0) são considerados água.
+
+    O critério FAI > 0 retém pixels de bloom denso de cianobactérias que
+    têm alta reflectância no NIR e podem ter NDWI abaixo do threshold.
+    O buffer negativo por lagoa (config.py) limita a inclusão de pixels
+    de borda/terra quando o threshold é relaxado.
 
     Args:
-        composite: ee.Image já com banda NDWI calculada (via add_water_indices).
-        threshold: valor de corte NDWI (default: -0.1, conforme eyefish).
+        composite: ee.Image já com bandas NDWI e FAI (via add_water_indices).
+        threshold: corte NDWI (default: -0.2, relaxado de -0.1).
     """
-    mask = composite.select("NDWI").gt(threshold)
-    return composite.updateMask(mask)
+    ndwi_mask = composite.select("NDWI").gt(threshold)
+    fai_mask  = composite.select("FAI").gt(0)
+    return composite.updateMask(ndwi_mask.Or(fai_mask))

@@ -1,13 +1,14 @@
 """
 Modelos SQLAlchemy standalone para o sistema NDCI/Sentinel-2.
 
-Dois modelos principais, espelhando a arquitetura de duas camadas do eyefish:
-  - WaterQualityRecord  → estatísticas agregadas por lagoa/mês (série temporal + ML)
+Três modelos:
+  - ImageRecord         → estatísticas por imagem individual (fonte primária)
+  - WaterQualityRecord  → agregados mensais derivados dos ImageRecords (ML + API legado)
   - MapTileRecord       → URLs de tiles XYZ para visualização no mapa
 
-A separação satélite/índice é refletida nas colunas `satellite` e `index_key`,
-permitindo que a mesma tabela armazene dados de múltiplos satélites e índices
-no futuro sem necessitar de nova migração.
+A granularidade por imagem (ImageRecord) foi adicionada para reproduzir a
+metodologia de Pi & Guasselli (SBSR 2025), que captura imagens individuais
+com até 10 dias de intervalo em vez de composições mensais.
 """
 
 from __future__ import annotations
@@ -16,6 +17,7 @@ from datetime import datetime
 
 from sqlalchemy import (
     Column,
+    Date,
     DateTime,
     Float,
     Index,
@@ -27,6 +29,53 @@ from sqlalchemy import (
 )
 
 from storage.database import Base
+
+
+class ImageRecord(Base):
+    """
+    Estatísticas por imagem individual de satélite para cada lagoa.
+
+    Fonte primária de dados — uma linha por cena Sentinel-2 que passou pelos
+    filtros de qualidade (cobertura de nuvens < 20%, pixels válidos mínimos).
+    Os agregados mensais em WaterQualityRecord são derivados desta tabela.
+
+    Metodologia: Pi & Guasselli (SBSR 2025) — capturas individuais com até
+    10 dias de intervalo preservam picos de bloom de curta duração.
+    """
+
+    __tablename__ = "ndci_image_records"
+
+    id          = Column(Integer,      primary_key=True, autoincrement=True)
+    satellite   = Column(String(50),   nullable=False, index=True)
+    lagoa       = Column(String(100),  nullable=False, index=True)
+    data        = Column(Date,         nullable=False)          # data da imagem
+    ano         = Column(SmallInteger, nullable=False)          # derivado de data
+    mes         = Column(SmallInteger, nullable=False)          # derivado de data
+
+    # Índices espectrais calculados na geometria erodida (com buffer negativo)
+    ndci_mean   = Column(Float, nullable=True)
+    ndci_p90    = Column(Float, nullable=True)
+    ndci_p10    = Column(Float, nullable=True)
+    ndti_mean   = Column(Float, nullable=True)
+    ndwi_mean   = Column(Float, nullable=True)
+    fai_mean    = Column(Float, nullable=True)
+
+    n_pixels    = Column(Integer, nullable=True)   # pixels válidos após máscaras
+    cloud_pct   = Column(Float,   nullable=True)   # CLOUDY_PIXEL_PERCENTAGE da cena
+
+    created_at  = Column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("satellite", "lagoa", "data", name="uq_image_record"),
+        Index("ix_ir_lagoa_data",    "lagoa", "data"),
+        Index("ix_ir_lagoa_periodo", "lagoa", "ano", "mes"),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<ImageRecord {self.lagoa} {self.data} "
+            f"ndci={self.ndci_mean}>"
+        )
 
 
 class WaterQualityRecord(Base):

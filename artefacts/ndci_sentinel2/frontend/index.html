@@ -64,21 +64,35 @@
     </section>
 
     <!-- Série temporal -->
-    <section class="card">
-      <div class="chart-header">
-        <span class="card-title">Série temporal — NDCI médio mensal</span>
-        <div class="chart-controls">
+    <section class="card card-series">
+      <div class="chart-header series-header">
+        <div class="series-header-left">
+          <span class="card-title series-title">Série temporal — NDCI</span>
+          <span id="series-lagoa-tag" class="series-lagoa-tag">—</span>
+        </div>
+        <div class="chart-controls series-header-right">
           <select id="lagoa-select" class="lagoa-select"></select>
-          <div class="legend-alerts">
-            <span class="la-bom">Bom &lt;0.02</span>
-            <span class="la-moderado">Moderado 0.02–0.10</span>
-            <span class="la-elevado">Elevado 0.10–0.20</span>
-            <span class="la-critico">Crítico &gt;0.20</span>
+          <label class="view-toggle-label" title="Alternar entre agregação mensal e imagens individuais">
+            <input type="checkbox" id="view-toggle" />
+            <span class="view-toggle-track"><span class="view-toggle-thumb"></span></span>
+            <span class="view-toggle-text">Por imagem</span>
+          </label>
+          <div class="series-date-filter" title="Filtrar período exibido">
+            <input type="month" id="series-date-from" title="Data inicial" />
+            <span class="filter-sep">—</span>
+            <input type="month" id="series-date-to" title="Data final" />
           </div>
         </div>
       </div>
-      <div class="chart-wrap" style="height:300px">
+      <div class="chart-wrap chart-wrap-series">
         <canvas id="chart-series"></canvas>
+      </div>
+      <div class="series-threshold-legend">
+        <span class="stl-chip stl-bom"><span class="stl-dot"></span>Bom &lt;0.02</span>
+        <span class="stl-chip stl-mod"><span class="stl-dot"></span>Moderado 0.02–0.10</span>
+        <span class="stl-chip stl-ele"><span class="stl-dot"></span>Elevado 0.10–0.20</span>
+        <span class="stl-chip stl-cri"><span class="stl-dot"></span>Crítico &gt;0.20</span>
+        <span class="stl-chip stl-bloom"><span class="stl-dot"></span>Eflorescência ≈14 µg/L</span>
       </div>
       <div id="point-detail" class="point-detail"></div>
     </section>

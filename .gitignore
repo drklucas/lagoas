@@ -1,0 +1,32 @@
+# ── Credenciais e segredos ────────────────────────────────────────────────────
+.env
+credentials/
+*.json.key
+*service_account*
+
+# ── Build estático (publicado via gh-pages, não versionado no main) ───────────
+artefacts/ndci_sentinel2/dist/
+
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+*.egg-info/
+.eggs/
+dist/
+build/
+*.so
+
+# ── IDE / OS ──────────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+Thumbs.db
+
+# ── Claude Code (settings locais da sessão) ───────────────────────────────────
+.claude/settings.local.json

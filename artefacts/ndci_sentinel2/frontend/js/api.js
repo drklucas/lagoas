@@ -15,6 +15,10 @@ export async function fetchJSON(path) {
 export const getWaterQuality = (lagoa) =>
   fetchJSON('/api/water-quality' + (lagoa ? `?lagoa=${encodeURIComponent(lagoa)}` : ''));
 
+/** Retorna { lagoa, datas, ndci_mean, ndci_p90, ndci_p10, n_pixels, cloud_pct, ... } */
+export const getImageSeries = (lagoa) =>
+  fetchJSON(`/api/water-quality/${encodeURIComponent(lagoa)}/images`);
+
 /** Retorna { "Lagoa X": { periodo, ndci_mean, status, ... } } */
 export const getCurrentStatus = () =>
   fetchJSON('/api/water-quality/current');

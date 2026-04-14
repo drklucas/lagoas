@@ -48,3 +48,12 @@ def create_all_tables() -> None:
     """Cria todas as tabelas (útil para testes e setup inicial)."""
     from storage import models  # noqa: F401 — garante registro dos modelos
     Base.metadata.create_all(bind=engine)
+
+
+def run_migration(sql_path: str) -> None:
+    """Executa um arquivo SQL de migração diretamente no banco."""
+    import pathlib
+    sql = pathlib.Path(sql_path).read_text(encoding="utf-8")
+    with engine.connect() as conn:
+        conn.execute(sql)
+        conn.commit()

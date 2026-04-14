@@ -20,7 +20,7 @@ import calendar
 import logging
 from datetime import datetime
 
-from config import LAGOAS, SENTINEL2_START_YEAR, TILE_TTL_HOURS
+from config import ACTIVE_LAGOAS, LAGOAS, SENTINEL2_START_YEAR, TILE_TTL_HOURS
 from core.index_registry import INDICES
 from ingestion.gee_auth import init_ee, extract_tile_url
 from ingestion.sentinel2.cloud_mask import cloud_mask_s2
@@ -61,7 +61,8 @@ def _sync_generate_tiles(
 
     now        = datetime.utcnow()
     ano_fim    = ano_fim or now.year
-    lagoas_cfg = {k: v for k, v in LAGOAS.items() if k in (lagoas or LAGOAS)}
+    allowed    = lagoas or ACTIVE_LAGOAS or list(LAGOAS)
+    lagoas_cfg = {k: v for k, v in LAGOAS.items() if k in allowed}
     idx_keys   = indices or _WATER_INDICES
 
     saved, skipped, errors = 0, 0, []
@@ -78,8 +79,10 @@ def _sync_generate_tiles(
 
     try:
         for lagoa_name, lagoa_cfg in lagoas_cfg.items():
-            geom   = ee.Geometry.Polygon([lagoa_cfg["polygon"]])
-            bounds = lagoa_cfg["bbox"]
+            geom_raw  = ee.Geometry.Polygon([lagoa_cfg["polygon"]])
+            buffer_m  = lagoa_cfg.get("buffer_negativo_m", 0)
+            geom      = geom_raw.buffer(-buffer_m) if buffer_m > 0 else geom_raw
+            bounds    = lagoa_cfg["bbox"]
 
             for year in range(ano_inicio, ano_fim + 1):
                 mes_fim = now.month if year == now.year else 12
@@ -110,7 +113,7 @@ def _sync_generate_tiles(
                             monthly = (
                                 s2_base
                                 .filterDate(d0, d1)
-                                .filterBounds(geom)
+                                .filterBounds(geom_raw)   # filtro no polígono completo
                             )
 
                             if monthly.size().getInfo() == 0:
@@ -122,7 +125,7 @@ def _sync_generate_tiles(
                                 continue
 
                             composite = monthly.median()
-                            water_img = water_mask(composite)
+                            water_img = water_mask(composite).clip(geom)  # recorte na geom erodida
 
                             # Seleciona banda do índice pelo nome GEE
                             band_name = idx_key.upper()   # "NDCI" ou "NDTI"

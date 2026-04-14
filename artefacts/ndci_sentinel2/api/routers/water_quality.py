@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from core.index_registry import classify
 from storage.database import get_db
+from storage.repositories.image_records import ImageRecordRepository
 from storage.repositories.water_quality import WaterQualityRepository
 
 router = APIRouter(prefix="/api/water-quality", tags=["Water Quality"])
@@ -106,3 +107,44 @@ def list_lagoas(
     """Lista de lagoas com dados disponíveis no banco."""
     repo = WaterQualityRepository(db)
     return {"lagoas": repo.available_lagoas(satellite=satellite)}
+
+
+@router.get("/{lagoa}/images")
+def get_image_series(
+    lagoa: str,
+    satellite: str = "sentinel2",
+    db: Session = Depends(get_db),
+):
+    """
+    Série temporal por imagem individual de uma lagoa.
+
+    Retorna um registro por cena Sentinel-2 válida coletada, com
+    granularidade de data (YYYY-MM-DD) em vez de período mensal.
+    Inclui P10 e P90 do NDCI por imagem para análise de variabilidade.
+
+    Endpoint alinhado com Pi & Guasselli (SBSR 2025).
+    """
+    repo    = ImageRecordRepository(db)
+    records = repo.get_series(lagoa=lagoa, satellite=satellite)
+
+    if not records:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Nenhum dado por imagem para lagoa='{lagoa}'. "
+                   f"Execute /api/workers/collect-stats para iniciar a ingestão.",
+        )
+
+    return {
+        "lagoa":     lagoa,
+        "satellite": satellite,
+        "n_images":  len(records),
+        "datas":     [r.data.isoformat() for r in records],
+        "ndci_mean": [r.ndci_mean  for r in records],
+        "ndci_p90":  [r.ndci_p90   for r in records],
+        "ndci_p10":  [r.ndci_p10   for r in records],
+        "ndti_mean": [r.ndti_mean  for r in records],
+        "fai_mean":  [r.fai_mean   for r in records],
+        "ndwi_mean": [r.ndwi_mean  for r in records],
+        "n_pixels":  [r.n_pixels   for r in records],
+        "cloud_pct": [r.cloud_pct  for r in records],
+    }
