@@ -93,15 +93,24 @@ function _onLagoaChange() {
   const info  = _avail[idx];
   if (!info) return;
 
-  // Usa os períodos específicos da lagoa selecionada, do mais recente para o mais antigo
-  const periodos = (
-    info.periodos_por_lagoa?.[lagoa] ?? info.periodos_mensais ?? []
-  ).slice().sort().reverse();
+  // Datas para a lagoa selecionada, mais recente primeiro
+  const datas = (info.datas_por_lagoa?.[lagoa] ?? []).slice().sort().reverse();
 
   const perSel = document.getElementById('map-period');
   if (perSel) {
-    perSel.innerHTML = periodos
-      .map(p => `<option value="${p}">${p}</option>`)
+    // Agrupa por ano-mês para facilitar navegação (optgroup)
+    const grupos = {};
+    for (const d of datas) {
+      const ym = d.slice(0, 7);   // "YYYY-MM"
+      if (!grupos[ym]) grupos[ym] = [];
+      grupos[ym].push(d);
+    }
+    perSel.innerHTML = Object.entries(grupos)
+      .map(([ym, ds]) =>
+        `<optgroup label="${ym}">` +
+        ds.map(d => `<option value="${d}">${d}</option>`).join('') +
+        `</optgroup>`
+      )
       .join('');
   }
 
@@ -117,16 +126,15 @@ function _bindControls() {
 // ── Tile loading ───────────────────────────────────────────────────────────────
 
 async function _loadTile() {
-  const idx    = _selVal('map-index');
-  const lagoa  = _selVal('map-lagoa');
-  const period = _selVal('map-period');
-  if (!idx || !lagoa || !period) return;
+  const idx   = _selVal('map-index');
+  const lagoa = _selVal('map-lagoa');
+  const data  = _selVal('map-period');   // YYYY-MM-DD
+  if (!idx || !lagoa || !data) return;
 
-  const [ano, mes] = period.split('-').map(Number);
   _showStatus('Carregando…');
 
   try {
-    const tile = await getTileLagoa(idx, lagoa, ano, mes);
+    const tile = await getTileLagoa(idx, lagoa, data);
 
     // Troca camada
     if (_tileLayer) { _map.removeLayer(_tileLayer); _tileLayer = null; }
@@ -147,7 +155,7 @@ async function _loadTile() {
     _renderLegend(tile, idx);
     _showStatus('');
   } catch {
-    _showStatus(`Tile não encontrado para ${lagoa} ${period}.`, true);
+    _showStatus(`Tile não encontrado para ${lagoa} ${data}.`, true);
     if (_tileLayer) { _map.removeLayer(_tileLayer); _tileLayer = null; }
     _hideLegend();
   }

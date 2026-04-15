@@ -7,7 +7,7 @@ cujo expires_at cai dentro das próximas `window_hours` horas (default: 6 h).
 
 Fluxo:
   1. Busca na tabela ndci_map_tiles todos os tiles com expires_at <= now + window
-  2. Para cada tile, reconstrói a imagem GEE com os mesmos parâmetros
+  2. Para cada tile, reconstrói a imagem GEE com filterDate(data, data+1d)
   3. Chama getMapId() novamente → novo map_id + tile_url
   4. Atualiza o registro no banco e invalida o cache de map_id
 """
@@ -15,9 +15,8 @@ Fluxo:
 from __future__ import annotations
 
 import asyncio
-import calendar
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from config import LAGOAS, TILE_TTL_HOURS, TILE_REFRESH_WINDOW_HOURS
 from core.index_registry import INDICES
@@ -33,8 +32,8 @@ logger = logging.getLogger(__name__)
 
 def _rebuild_image(rec: MapTileRecord):
     """
-    Reconstrói o objeto ee.Image para um tile existente.
-    Retorna None se não houver imagens disponíveis para o período.
+    Reconstrói o objeto ee.Image para um tile existente usando filterDate de 1 dia.
+    Retorna None se não houver imagens disponíveis para a data.
     """
     import ee
 
@@ -42,21 +41,26 @@ def _rebuild_image(rec: MapTileRecord):
         logger.warning("Refresh: satélite '%s' não suportado neste worker.", rec.satellite)
         return None
 
+    if not rec.data:
+        logger.warning("Refresh: tile %s sem data — pulando.", rec.tile_key)
+        return None
+
     lagoa_cfg = LAGOAS.get(rec.lagoa)
     if not lagoa_cfg:
         logger.warning("Refresh: lagoa '%s' não encontrada no config.", rec.lagoa)
         return None
 
-    ultimo = calendar.monthrange(rec.ano, rec.mes)[1]
-    d0 = f"{rec.ano}-{rec.mes:02d}-01"
-    d1 = f"{rec.ano}-{rec.mes:02d}-{ultimo}"
+    d0 = rec.data.isoformat()
+    d1 = (rec.data + timedelta(days=1)).isoformat()
 
-    geom = ee.Geometry.Polygon([lagoa_cfg["polygon"]])
+    geom_raw = ee.Geometry.Polygon([lagoa_cfg["polygon"]])
+    buffer_m = lagoa_cfg.get("buffer_negativo_m", 0)
+    geom     = geom_raw.buffer(-buffer_m) if buffer_m > 0 else geom_raw
 
     col = (
         ee.ImageCollection("COPERNICUS/S2_SR_HARMONIZED")
         .filterDate(d0, d1)
-        .filterBounds(geom)
+        .filterBounds(geom_raw)
         .map(cloud_mask_s2)
         .map(add_water_indices)
     )
@@ -64,10 +68,10 @@ def _rebuild_image(rec: MapTileRecord):
     if col.size().getInfo() == 0:
         return None
 
-    composite = col.median()
-    water_img = water_mask(composite)
+    composite = col.mosaic()
+    water_img = water_mask(composite).clip(geom)
 
-    band_name = rec.index_key.upper()   # "NDCI" → "NDCI", "ndti" → "NDTI"
+    band_name = rec.index_key.upper()
     return water_img.select(band_name)
 
 
@@ -103,8 +107,8 @@ def _sync_refresh_expiring(window_hours: int = TILE_REFRESH_WINDOW_HOURS) -> dic
                 image = _rebuild_image(rec)
                 if image is None:
                     logger.debug(
-                        "Refresh: sem imagens para %s/%s %d-%02d — pulando.",
-                        rec.index_key, rec.lagoa, rec.ano, rec.mes,
+                        "Refresh: sem imagens para %s/%s %s — pulando.",
+                        rec.index_key, rec.lagoa, rec.data,
                     )
                     skipped += 1
                     continue
@@ -122,8 +126,7 @@ def _sync_refresh_expiring(window_hours: int = TILE_REFRESH_WINDOW_HOURS) -> dic
                 repo.upsert(
                     satellite=rec.satellite,
                     index_key=rec.index_key,
-                    ano=rec.ano,
-                    mes=rec.mes,
+                    data=rec.data,
                     lagoa=rec.lagoa,
                     tile_url=extract_tile_url(map_info),
                     map_id=map_info.get("mapid", ""),
@@ -133,13 +136,13 @@ def _sync_refresh_expiring(window_hours: int = TILE_REFRESH_WINDOW_HOURS) -> dic
                 )
                 refreshed += 1
                 logger.debug(
-                    "Refreshed: %s/%s %d-%02d",
-                    rec.index_key, rec.lagoa, rec.ano, rec.mes,
+                    "Refreshed: %s/%s %s",
+                    rec.index_key, rec.lagoa, rec.data,
                 )
 
             except Exception as exc:
                 db.rollback()
-                msg = f"Refresh {rec.index_key}/{rec.lagoa}/{rec.ano}-{rec.mes:02d}: {exc}"
+                msg = f"Refresh {rec.index_key}/{rec.lagoa}/{rec.data}: {exc}"
                 errors.append(msg)
                 logger.warning(msg)
 

@@ -1,11 +1,13 @@
 """
 Repositório para MapTileRecord — CRUD e cache de map_id.
+
+tile_key format: "<satellite>|<index_key>|<YYYY-MM-DD>|<lagoa>"
 """
 
 from __future__ import annotations
 
 import threading
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 from sqlalchemy.orm import Session
 
@@ -51,8 +53,7 @@ class MapTileRepository:
         *,
         satellite: str,
         index_key: str,
-        ano: int,
-        mes: int,
+        data: date,
         lagoa: str,
         tile_url: str,
         map_id: str,
@@ -60,7 +61,7 @@ class MapTileRepository:
         bounds: list[float],
         ttl_hours: int = 23,
     ) -> MapTileRecord:
-        """Insere ou atualiza um tile. Invalida o cache em memória."""
+        """Insere ou atualiza um tile por data de imagem. Invalida o cache em memória."""
         now = datetime.utcnow()
         expires = now + timedelta(hours=ttl_hours)
 
@@ -69,8 +70,7 @@ class MapTileRepository:
             .filter_by(
                 satellite=satellite,
                 index_key=index_key,
-                ano=ano,
-                mes=mes,
+                data=data,
                 lagoa=lagoa,
             )
             .first()
@@ -89,8 +89,9 @@ class MapTileRepository:
             rec = MapTileRecord(
                 satellite=satellite,
                 index_key=index_key,
-                ano=ano,
-                mes=mes,
+                data=data,
+                ano=data.year,
+                mes=data.month,
                 lagoa=lagoa,
                 tile_url=tile_url,
                 map_id=map_id,
@@ -115,8 +116,7 @@ class MapTileRepository:
         *,
         satellite: str,
         index_key: str,
-        ano: int,
-        mes: int,
+        data: date,
         lagoa: str,
     ) -> MapTileRecord | None:
         return (
@@ -124,8 +124,7 @@ class MapTileRepository:
             .filter_by(
                 satellite=satellite,
                 index_key=index_key,
-                ano=ano,
-                mes=mes,
+                data=data,
                 lagoa=lagoa,
             )
             .first()
@@ -134,28 +133,27 @@ class MapTileRepository:
     def get_map_id_for_key(self, tile_key: str) -> str | None:
         """
         Resolve tile_key → map_id, usando cache em memória primeiro.
-        tile_key formato: "<satellite>|<index_key>|<ano>|<mes>|<lagoa>"
+        tile_key formato: "<satellite>|<index_key>|<YYYY-MM-DD>|<lagoa>"
         """
         cached = _cache_get(tile_key)
         if cached:
             return cached
 
-        parts = tile_key.split("|", 4)
-        if len(parts) != 5:
+        # maxsplit=3 garante que lagoas com '|' no nome (improvável mas seguro)
+        parts = tile_key.split("|", 3)
+        if len(parts) != 4:
             return None
-        satellite, index_key, ano_s, mes_s, lagoa = parts
+        satellite, index_key, date_str, lagoa = parts
 
         try:
-            ano = int(ano_s)
-            mes = int(mes_s)
+            data_parsed = date.fromisoformat(date_str)
         except ValueError:
             return None
 
         rec = self.get(
             satellite=satellite,
             index_key=index_key,
-            ano=ano,
-            mes=mes,
+            data=data_parsed,
             lagoa=lagoa,
         )
         if not rec or not rec.map_id:
@@ -178,8 +176,7 @@ class MapTileRepository:
         """
         Resumo de cobertura por índice:
           - lagoas disponíveis
-          - periodos_por_lagoa: dict lagoa → lista de "YYYY-MM" ordenada
-          - periodos_mensais: union de todos os períodos (retrocompatibilidade)
+          - datas_por_lagoa: dict lagoa → lista de "YYYY-MM-DD" ordenada
           - contagem de tiles válidos vs expirados
         """
         now = datetime.utcnow()
@@ -190,18 +187,17 @@ class MapTileRepository:
             key = r.index_key
             if key not in result:
                 result[key] = {
-                    "lagoas":            set(),
-                    "periodos_por_lagoa": {},
-                    "periodos_mensais":  set(),
-                    "total_tiles":       0,
-                    "tiles_validos":     0,
-                    "tiles_expirados":   0,
+                    "lagoas":          set(),
+                    "datas_por_lagoa": {},
+                    "total_tiles":     0,
+                    "tiles_validos":   0,
+                    "tiles_expirados": 0,
                 }
             g = result[key]
-            periodo = f"{r.ano}-{r.mes:02d}"
+            data_str = r.data.isoformat() if r.data else None
             g["lagoas"].add(r.lagoa)
-            g["periodos_mensais"].add(periodo)
-            g["periodos_por_lagoa"].setdefault(r.lagoa, set()).add(periodo)
+            if data_str:
+                g["datas_por_lagoa"].setdefault(r.lagoa, set()).add(data_str)
             g["total_tiles"] += 1
             if r.expires_at and r.expires_at > now:
                 g["tiles_validos"] += 1
@@ -210,11 +206,10 @@ class MapTileRepository:
 
         # Serializa sets para listas ordenadas
         for v in result.values():
-            v["lagoas"]           = sorted(v["lagoas"])
-            v["periodos_mensais"] = sorted(v["periodos_mensais"])
-            v["periodos_por_lagoa"] = {
-                lagoa: sorted(periodos)
-                for lagoa, periodos in v["periodos_por_lagoa"].items()
+            v["lagoas"] = sorted(v["lagoas"])
+            v["datas_por_lagoa"] = {
+                lagoa: sorted(datas)
+                for lagoa, datas in v["datas_por_lagoa"].items()
             }
 
         return result

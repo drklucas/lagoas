@@ -131,18 +131,20 @@ class MapTileRecord(Base):
     """
     Cache de tile URLs XYZ geradas pelo GEE via getMapId().
 
-    Cada registro representa uma camada de índice para um período (ano + mês)
-    e lagoa específicos.
+    Cada registro representa uma camada de índice para uma imagem individual
+    (data exata do satélite) de uma lagoa específica.
 
     Ciclo de vida:
       1. Worker gera tile → GEE retorna map_id + tile_url
-      2. Salvo aqui com expira_at = now + 23 h
+      2. Salvo aqui com expires_at = now + 23 h
       3. Frontend requisita /api/tiles/proxy/{z}/{x}/{y}?k=<tile_key>
          Backend faz proxy autenticado para o GEE
-      4. Worker de refresh (a cada 12 h) regenera tiles com expira_at < now + 6 h
+      4. Worker de refresh regenera tiles com expires_at < now + 6 h
 
-    O `tile_key` é composto: "<satellite>|<index_key>|<ano>|<mes>|<lagoa>"
+    O `tile_key` é composto: "<satellite>|<index_key>|<YYYY-MM-DD>|<lagoa>"
     Usado como chave no proxy — estável mesmo após refresh do map_id.
+
+    Metodologia: Pi & Guasselli (SBSR 2025) — granularidade por imagem individual.
     """
 
     __tablename__ = "ndci_map_tiles"
@@ -150,8 +152,9 @@ class MapTileRecord(Base):
     id          = Column(Integer,      primary_key=True, autoincrement=True)
     satellite   = Column(String(50),   nullable=False)   # ex: "sentinel2"
     index_key   = Column(String(50),   nullable=False)   # ex: "ndci"
-    ano         = Column(SmallInteger, nullable=False)
-    mes         = Column(SmallInteger, nullable=False)   # sempre mensal para água
+    data        = Column(Date,         nullable=True)    # data exata da imagem (YYYY-MM-DD)
+    ano         = Column(SmallInteger, nullable=True)    # derivado de data (para agrupamento)
+    mes         = Column(SmallInteger, nullable=True)    # derivado de data (para agrupamento)
     lagoa       = Column(String(100),  nullable=False)
 
     # GEE tile data
@@ -167,12 +170,12 @@ class MapTileRecord(Base):
 
     __table_args__ = (
         UniqueConstraint(
-            "satellite", "index_key", "ano", "mes", "lagoa",
+            "satellite", "index_key", "data", "lagoa",
             name="uq_map_tile",
         ),
-        Index("ix_map_tiles_index_ano", "index_key", "ano"),
-        Index("ix_map_tiles_expires",   "expires_at"),
-        Index("ix_map_tiles_lagoa",     "lagoa"),
+        Index("ix_map_tiles_index_data", "index_key", "data"),
+        Index("ix_map_tiles_expires",    "expires_at"),
+        Index("ix_map_tiles_lagoa",      "lagoa"),
     )
 
     @property
@@ -183,10 +186,11 @@ class MapTileRecord(Base):
     @property
     def tile_key(self) -> str:
         """Chave estável para uso no proxy endpoint."""
-        return f"{self.satellite}|{self.index_key}|{self.ano}|{self.mes}|{self.lagoa}"
+        data_str = self.data.isoformat() if self.data else "nodate"
+        return f"{self.satellite}|{self.index_key}|{data_str}|{self.lagoa}"
 
     def __repr__(self) -> str:
         return (
             f"<MapTileRecord {self.satellite}/{self.index_key} "
-            f"{self.lagoa} {self.ano}-{self.mes:02d} valid={self.is_valid}>"
+            f"{self.lagoa} {self.data} valid={self.is_valid}>"
         )

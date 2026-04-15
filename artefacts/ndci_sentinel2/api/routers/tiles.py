@@ -6,8 +6,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import threading
-from datetime import datetime
+from datetime import date as date_type
 from urllib.parse import quote, unquote
 
 import httpx
@@ -18,6 +17,7 @@ from sqlalchemy.orm import Session
 from config import LAGOAS
 from storage.database import SessionLocal, get_db
 from storage.repositories.map_tiles import MapTileRepository
+from storage.tile_disk_cache import disk_path, read_disk, write_disk
 from ingestion.gee_auth import get_oauth_credentials
 
 logger = logging.getLogger(__name__)
@@ -39,8 +39,7 @@ def _tile_to_dict(rec) -> dict:
         "satellite":    rec.satellite,
         "index_key":    rec.index_key,
         "lagoa":        rec.lagoa,
-        "ano":          rec.ano,
-        "mes":          rec.mes,
+        "data":         rec.data.isoformat() if rec.data else None,
         "tile_url":     proxy_url,
         "vis_min":      rec.vis_min,
         "vis_max":      rec.vis_max,
@@ -66,12 +65,21 @@ async def proxy_gee_tile(
 
     O frontend nunca expõe credenciais GEE — toda requisição passa por aqui.
     Usa cache em memória (tile_key → map_id) para evitar hit no banco por request.
+    Quando TILE_DISK_CACHE_DIR está configurado, serve tiles do disco sem ir ao GEE.
     """
-    loop   = asyncio.get_event_loop()
-    key    = unquote(k)
+    loop = asyncio.get_event_loop()
+    key  = unquote(k)
 
-    db     = SessionLocal()
-    repo   = MapTileRepository(db)
+    # ── 1. Cache em disco (hit imediato, sem GEE) ─────────────────────────────
+    dp = disk_path(key, z, x, y)
+    if dp is not None:
+        cached = await loop.run_in_executor(None, read_disk, dp)
+        if cached is not None:
+            return Response(content=cached, media_type="image/png")
+
+    # ── 2. Resolve map_id (memória → banco) ──────────────────────────────────
+    db   = SessionLocal()
+    repo = MapTileRepository(db)
 
     try:
         map_id = await loop.run_in_executor(None, repo.get_map_id_for_key, key)
@@ -81,6 +89,7 @@ async def proxy_gee_tile(
     if not map_id:
         raise HTTPException(404, "Tile não encontrado. Execute o worker de geração.")
 
+    # ── 3. Fetch GEE ──────────────────────────────────────────────────────────
     creds = await loop.run_in_executor(None, get_oauth_credentials)
     if creds is None:
         raise HTTPException(503, "Credenciais GEE indisponíveis.")
@@ -94,10 +103,12 @@ async def proxy_gee_tile(
                 follow_redirects=True,
             )
         if r.status_code == 200:
-            return Response(
-                content=r.content,
-                media_type=r.headers.get("content-type", "image/png"),
-            )
+            content = r.content
+            media   = r.headers.get("content-type", "image/png")
+            # ── 4. Persiste no disco para próximas requisições ────────────────
+            if dp is not None and "image" in media:
+                await loop.run_in_executor(None, write_disk, dp, content)
+            return Response(content=content, media_type=media)
         # Map ID expirou — invalida cache para forçar releitura do banco no próximo request
         if r.status_code in (401, 404):
             db2 = SessionLocal()
@@ -114,29 +125,32 @@ async def proxy_gee_tile(
 def get_tile_lagoa(
     index_key: str,
     lagoa: str = Query(..., description="Nome da lagoa (ex: 'Lagoa do Peixoto')"),
-    ano:   int = Query(..., ge=2017, le=2035),
-    mes:   int = Query(..., ge=1, le=12),
+    data:  str = Query(..., description="Data da imagem: YYYY-MM-DD"),
     satellite: str = Query("sentinel2"),
     db: Session = Depends(get_db),
 ):
     """
-    Retorna a tile_url para um índice/lagoa/período específico.
+    Retorna a tile_url para um índice/lagoa/data específicos.
 
     Exemplo:
-      GET /api/tiles/lagoa/ndci?lagoa=Lagoa+do+Peixoto&ano=2023&mes=8
+      GET /api/tiles/lagoa/ndci?lagoa=Lagoa+do+Peixoto&data=2023-08-07
     """
+    try:
+        data_parsed = date_type.fromisoformat(data)
+    except ValueError:
+        raise HTTPException(400, f"Formato de data inválido: '{data}'. Use YYYY-MM-DD.")
+
     repo = MapTileRepository(db)
     rec  = repo.get(
         satellite=satellite,
         index_key=index_key,
-        ano=ano,
-        mes=mes,
+        data=data_parsed,
         lagoa=lagoa,
     )
     if not rec:
         raise HTTPException(
             404,
-            f"Tile {index_key}/{lagoa}/{ano}-{mes:02d} não encontrado. "
+            f"Tile {index_key}/{lagoa}/{data} não encontrado. "
             f"Execute POST /api/workers/generate-tiles para gerá-lo.",
         )
     return _tile_to_dict(rec)

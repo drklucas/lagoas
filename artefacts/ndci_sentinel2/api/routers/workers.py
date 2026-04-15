@@ -147,6 +147,47 @@ async def run_refresh_tiles(
     return WorkerResult(status=status, message=message, detail=result)
 
 
+# ── Worker: warm-cache de tiles em disco ─────────────────────────────────────
+
+def _run_warm_cache_sync(zoom_min, zoom_max, concurrency):
+    """Executado em thread pool com event loop próprio (BackgroundTasks é síncrono)."""
+    import asyncio
+    from ingestion.sentinel2.cache_warmer import warm_cache
+    logger.info(
+        "warm-tile-cache iniciado — zooms=%d..%d concorrência=%d",
+        zoom_min, zoom_max, concurrency,
+    )
+    result = asyncio.run(warm_cache(zoom_min=zoom_min, zoom_max=zoom_max, concurrency=concurrency))
+    logger.info(
+        "warm-tile-cache concluído — hit=%s saved=%s empty=%s errors=%s elapsed=%ss",
+        result.get("hit"), result.get("saved"), result.get("empty"),
+        result.get("errors"), result.get("elapsed_s"),
+    )
+
+
+@router.post("/warm-tile-cache", response_model=WorkerResult)
+async def run_warm_tile_cache(
+    background_tasks: BackgroundTasks,
+    zoom_min:    int = Query(10, ge=1,  le=18, description="Zoom mínimo a cachear"),
+    zoom_max:    int = Query(14, ge=1,  le=18, description="Zoom máximo a cachear"),
+    concurrency: int = Query(12, ge=1,  le=32, description="Downloads simultâneos"),
+):
+    """
+    Pré-aquece o cache em disco: baixa todos os tiles dos registros válidos no banco.
+
+    Tiles já em disco são ignorados (idempotente). Roda em background.
+    Acompanhe: `docker compose logs -f api`
+    """
+    background_tasks.add_task(_run_warm_cache_sync, zoom_min, zoom_max, concurrency)
+    return WorkerResult(
+        status="started",
+        message=(
+            f"Warm-cache iniciado em background: zooms {zoom_min}–{zoom_max}, "
+            f"concorrência {concurrency}. Acompanhe: docker compose logs -f api"
+        ),
+    )
+
+
 # ── Status do banco ────────────────────────────────────────────────────────────
 
 @router.get("/status")

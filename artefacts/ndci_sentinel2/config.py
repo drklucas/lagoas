@@ -12,12 +12,21 @@ Referência metodológica: Pi & Guasselli (SBSR 2025).
 
 from __future__ import annotations
 
+import os
+
 # ── TTL dos tiles GEE ─────────────────────────────────────────────────────────
 # Map IDs expiram empiricamente em ~24 h. Usamos 23 h para garantir margem.
 TILE_TTL_HOURS: int = 23
 
 # Janela de antecedência para o worker de refresh (regenera antes de expirar)
 TILE_REFRESH_WINDOW_HOURS: int = 6
+
+# ── Cache em disco de tiles ───────────────────────────────────────────────────
+# Quando definido, imagens PNG dos tiles são salvas localmente após o primeiro
+# fetch do GEE e servidas do disco nas requisições seguintes.
+# Defina TILE_DISK_CACHE_DIR="" no .env para desativar.
+# Ideal para desenvolvimento local; para produção use um CDN/object store.
+TILE_DISK_CACHE_DIR: str | None = os.environ.get("TILE_DISK_CACHE_DIR", "./tile_cache") or None
 
 # ── Lagoas monitoradas ────────────────────────────────────────────────────────
 #
@@ -1152,4 +1161,7 @@ SENTINEL2_START_YEAR: int = 2017
 # ── Lagoas ativas para o worker (None = todas) ────────────────────────────────
 ACTIVE_LAGOAS: list[str] | None = [
     "Lagoa dos Barros",
+    "Lagoa do Peixoto",
+    "Lagoa do Caconde",
+    "Lagoa dos Quadros",
 ]

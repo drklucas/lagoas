@@ -31,12 +31,16 @@ services:
       GEE_PROJECT:  ${GEE_PROJECT:-acontece-osorio}
       # Monte sua chave GEE via volume (veja .env.example)
       GEE_SERVICE_ACCOUNT_KEY: /run/secrets/gee_key
+      # Cache em disco de tiles — persiste PNGs localmente para evitar round-trips ao GEE
+      # Defina como "" no .env para desativar
+      TILE_DISK_CACHE_DIR: ${TILE_DISK_CACHE_DIR:-/app/tile_cache}
     secrets:
       - gee_key
     ports:
       - "8001:8001"
     volumes:
-      - .:/app   # hot-reload em desenvolvimento (remova em produção)
+      - .:/app           # hot-reload em desenvolvimento (remova em produção)
+      - tile_cache:/app/tile_cache   # persiste tiles entre recreações do container
 
 secrets:
   gee_key:
@@ -44,3 +48,4 @@ secrets:
 
 volumes:
   pg_data:
+  tile_cache:
