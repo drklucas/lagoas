@@ -26,8 +26,9 @@ export function initChartActions() {
     });
 
     const btnPdf = _makeBtn('export', 'Exportar PDF', ICON_DOWNLOAD, () => _exportPdf(canvas, title));
+    const btnImg = _makeBtn('export-img', 'Exportar imagem (fundo branco)', ICON_IMAGE, () => _exportImg(canvas, title));
 
-    actions.append(btnFs, btnPdf);
+    actions.append(btnFs, btnImg, btnPdf);
 
     const controls = header.querySelector('.chart-controls');
     if (controls) {
@@ -104,6 +105,50 @@ function _exportPdf(canvas, title) {
   pdf.save(`${safeName}.pdf`);
 }
 
+function _exportImg(canvas, title) {
+  // Passo 1 — lê os pixels originais do canvas (fundo transparente do Chart.js)
+  const orig = document.createElement('canvas');
+  orig.width  = canvas.width;
+  orig.height = canvas.height;
+  const oCtx = orig.getContext('2d');
+  oCtx.drawImage(canvas, 0, 0);
+
+  const imgd = oCtx.getImageData(0, 0, orig.width, orig.height);
+  const d = imgd.data;
+
+  // Passo 2 — nos pixels não-transparentes, escurece os que seriam invisíveis
+  // sobre fundo branco (cores tipo #e6edf3 usadas como texto no tema escuro)
+  for (let i = 0; i < d.length; i += 4) {
+    if (d[i + 3] < 20) continue; // transparente — será coberto pelo branco
+    const lum = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+    if (lum > 210) {
+      // Pixel claro sobre tema escuro → escurece para cinza legível sobre branco
+      d[i] = d[i + 1] = d[i + 2] = 60;
+      d[i + 3] = 255;
+    }
+  }
+  oCtx.putImageData(imgd, 0, 0);
+
+  // Passo 3 — compõe: fundo branco + chart recolorido (escala 2× para qualidade)
+  const scale = 2;
+  const tmp = document.createElement('canvas');
+  tmp.width  = canvas.width  * scale;
+  tmp.height = canvas.height * scale;
+  const tCtx = tmp.getContext('2d');
+  tCtx.fillStyle = '#ffffff';
+  tCtx.fillRect(0, 0, tmp.width, tmp.height);
+  tCtx.drawImage(orig, 0, 0, tmp.width, tmp.height);
+
+  const safeName = title
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/gi, '_').toLowerCase();
+
+  const link = document.createElement('a');
+  link.download = `${safeName}.png`;
+  link.href = tmp.toDataURL('image/png');
+  link.click();
+}
+
 /* ── Ícones SVG (stroke-based, fáceis de verificar) ──────────────────────── */
 
 const ICON_FULLSCREEN = `<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="square" aria-hidden="true">
@@ -124,4 +169,10 @@ const ICON_DOWNLOAD = `<svg width="14" height="14" viewBox="0 0 16 16" fill="non
   <line x1="8" y1="2" x2="8" y2="11"/>
   <polyline points="4,8 8,12 12,8"/>
   <line x1="2" y1="14" x2="14" y2="14"/>
+</svg>`;
+
+const ICON_IMAGE = `<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+  <rect x="1" y="3" width="14" height="10" rx="1.5"/>
+  <circle cx="5.5" cy="7" r="1.3"/>
+  <polyline points="1,12 5,8 8,11 11,7.5 15,12"/>
 </svg>`;
