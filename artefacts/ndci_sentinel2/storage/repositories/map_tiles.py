@@ -178,7 +178,8 @@ class MapTileRepository:
         """
         Resumo de cobertura por índice:
           - lagoas disponíveis
-          - períodos mensais disponíveis (YYYY-MM)
+          - periodos_por_lagoa: dict lagoa → lista de "YYYY-MM" ordenada
+          - periodos_mensais: union de todos os períodos (retrocompatibilidade)
           - contagem de tiles válidos vs expirados
         """
         now = datetime.utcnow()
@@ -189,15 +190,18 @@ class MapTileRepository:
             key = r.index_key
             if key not in result:
                 result[key] = {
-                    "lagoas":           set(),
-                    "periodos_mensais": set(),
-                    "total_tiles":      0,
-                    "tiles_validos":    0,
-                    "tiles_expirados":  0,
+                    "lagoas":            set(),
+                    "periodos_por_lagoa": {},
+                    "periodos_mensais":  set(),
+                    "total_tiles":       0,
+                    "tiles_validos":     0,
+                    "tiles_expirados":   0,
                 }
             g = result[key]
+            periodo = f"{r.ano}-{r.mes:02d}"
             g["lagoas"].add(r.lagoa)
-            g["periodos_mensais"].add(f"{r.ano}-{r.mes:02d}")
+            g["periodos_mensais"].add(periodo)
+            g["periodos_por_lagoa"].setdefault(r.lagoa, set()).add(periodo)
             g["total_tiles"] += 1
             if r.expires_at and r.expires_at > now:
                 g["tiles_validos"] += 1
@@ -208,6 +212,10 @@ class MapTileRepository:
         for v in result.values():
             v["lagoas"]           = sorted(v["lagoas"])
             v["periodos_mensais"] = sorted(v["periodos_mensais"])
+            v["periodos_por_lagoa"] = {
+                lagoa: sorted(periodos)
+                for lagoa, periodos in v["periodos_por_lagoa"].items()
+            }
 
         return result
 

@@ -88,15 +88,19 @@ function _onIndexChange() {
 }
 
 function _onLagoaChange() {
-  const idx  = _selVal('map-index');
-  const info = _avail[idx];
+  const idx   = _selVal('map-index');
+  const lagoa = _selVal('map-lagoa');
+  const info  = _avail[idx];
   if (!info) return;
 
-  // Repopula períodos (do mais recente para o mais antigo)
+  // Usa os períodos específicos da lagoa selecionada, do mais recente para o mais antigo
+  const periodos = (
+    info.periodos_por_lagoa?.[lagoa] ?? info.periodos_mensais ?? []
+  ).slice().sort().reverse();
+
   const perSel = document.getElementById('map-period');
   if (perSel) {
-    const sorted = [...(info.periodos_mensais ?? [])].sort().reverse();
-    perSel.innerHTML = sorted
+    perSel.innerHTML = periodos
       .map(p => `<option value="${p}">${p}</option>`)
       .join('');
   }
