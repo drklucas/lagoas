@@ -72,7 +72,7 @@ LAGOAS: dict[str, dict] = {
         ],
         "bbox": [-50.249, -29.883, -50.23, -29.857],
         "municipio": 4313508,   # Osório
-        "buffer_negativo_m": 100,
+        "buffer_negativo_m": 30,   # lago pequeno (~2.1 km²): 30 m = 1.5 px @20m remove pixel misto sem sacrificar área
     },
     "Lagoa dos Barros": {
         # fonte: hydrolakes | 132 vértices
