@@ -1,10 +1,11 @@
 """
 Modelos SQLAlchemy standalone para o sistema NDCI/Sentinel-2.
 
-Três modelos:
+Quatro modelos:
   - ImageRecord         → estatísticas por imagem individual (fonte primária)
   - WaterQualityRecord  → agregados mensais derivados dos ImageRecords (ML + API legado)
   - MapTileRecord       → URLs de tiles XYZ para visualização no mapa
+  - ReportLogRecord     → log de idempotência para relatórios enviados por e-mail
 
 A granularidade por imagem (ImageRecord) foi adicionada para reproduzir a
 metodologia de Pi & Guasselli (SBSR 2025), que captura imagens individuais
@@ -194,3 +195,30 @@ class MapTileRecord(Base):
             f"<MapTileRecord {self.satellite}/{self.index_key} "
             f"{self.lagoa} {self.data} valid={self.is_valid}>"
         )
+
+
+class ReportLogRecord(Base):
+    """
+    Log de idempotência para relatórios semanais enviados por e-mail.
+
+    Um registro por período ISO (ex: "2026-W15").
+    O UniqueConstraint garante que re-tentativas não inserem duplicatas.
+    Permite reenvio controlado via update do status.
+    """
+
+    __tablename__ = "ndci_report_log"
+
+    id             = Column(Integer,    primary_key=True, autoincrement=True)
+    report_period  = Column(String(20), nullable=False)   # ex: "2026-W15"
+    recipients     = Column(String,     nullable=False)   # separados por vírgula
+    status         = Column(String(20), nullable=False)   # sent | skipped | error
+    error_message  = Column(String,     nullable=True)
+    sent_at        = Column(DateTime,   nullable=False, default=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("report_period", name="uq_report_period"),
+        Index("ix_report_log_sent_at", "sent_at"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<ReportLogRecord {self.report_period} status={self.status}>"

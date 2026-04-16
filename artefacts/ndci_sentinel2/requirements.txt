@@ -18,3 +18,7 @@ pandas>=2.2.0
 
 # Imagens (para export GIF/ZIP — opcional)
 Pillow>=10.3.0
+
+# Relatórios e scheduler
+APScheduler>=3.10.0          # agendamento de jobs (collect_recent + send_weekly_report)
+Jinja2>=3.1.0                # templates HTML para o corpo do e-mail

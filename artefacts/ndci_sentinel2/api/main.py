@@ -25,6 +25,7 @@ from api.routers import (
     tiles_router,
     predictions_router,
     workers_router,
+    notifications_router,
 )
 
 _FRONTEND_DIR = os.path.join(os.path.dirname(__file__), "..", "frontend")
@@ -54,6 +55,7 @@ app.include_router(water_quality_router)
 app.include_router(tiles_router)
 app.include_router(predictions_router)
 app.include_router(workers_router)
+app.include_router(notifications_router)
 
 # Arquivos estáticos do frontend (CSS, JS)
 app.mount("/static", StaticFiles(directory=os.path.join(_FRONTEND_DIR)), name="static")

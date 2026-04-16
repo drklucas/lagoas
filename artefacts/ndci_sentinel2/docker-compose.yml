@@ -12,6 +12,7 @@ services:
       - ./migrations/001_water_quality.sql:/docker-entrypoint-initdb.d/01_water_quality.sql:ro
       - ./migrations/002_map_tiles.sql:/docker-entrypoint-initdb.d/02_map_tiles.sql:ro
       - ./migrations/003_image_records.sql:/docker-entrypoint-initdb.d/03_image_records.sql:ro
+      - ./migrations/005_report_log.sql:/docker-entrypoint-initdb.d/05_report_log.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ndci} -d ${POSTGRES_DB:-ndci}"]
       interval: 5s
@@ -34,6 +35,15 @@ services:
       # Cache em disco de tiles — persiste PNGs localmente para evitar round-trips ao GEE
       # Defina como "" no .env para desativar
       TILE_DISK_CACHE_DIR: ${TILE_DISK_CACHE_DIR:-/app/tile_cache}
+      # Necessário para disparo manual via /api/notifications/trigger-report
+      SMTP_HOST:     ${SMTP_HOST:-}
+      SMTP_PORT:     ${SMTP_PORT:-587}
+      SMTP_USER:     ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM:     ${SMTP_FROM:-}
+      SMTP_USE_SSL:  ${SMTP_USE_SSL:-false}
+      REPORT_RECIPIENTS:    ${REPORT_RECIPIENTS:-}
+      REPORT_LOOKBACK_DAYS: ${REPORT_LOOKBACK_DAYS:-21}
     secrets:
       - gee_key
     ports:
@@ -41,6 +51,37 @@ services:
     volumes:
       - .:/app           # hot-reload em desenvolvimento (remova em produção)
       - tile_cache:/app/tile_cache   # persiste tiles entre recreações do container
+
+  scheduler:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    command: ["python", "-m", "scheduler.report_scheduler"]
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-ndci}:${POSTGRES_PASSWORD:-ndci}@db:5432/${POSTGRES_DB:-ndci}
+      GEE_PROJECT:  ${GEE_PROJECT:-acontece-osorio}
+      GEE_SERVICE_ACCOUNT_KEY: /run/secrets/gee_key
+      # SMTP — configure no .env (veja .env.example)
+      SMTP_HOST:     ${SMTP_HOST:-}
+      SMTP_PORT:     ${SMTP_PORT:-587}
+      SMTP_USER:     ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM:     ${SMTP_FROM:-}
+      SMTP_USE_SSL:  ${SMTP_USE_SSL:-false}
+      # Destinatários do relatório — lista separada por vírgula
+      REPORT_RECIPIENTS:    ${REPORT_RECIPIENTS:-}
+      # Janela de busca de observações recentes (dias)
+      REPORT_LOOKBACK_DAYS: ${REPORT_LOOKBACK_DAYS:-21}
+      # Agendamento (padrão: coleta 06h UTC, relatório toda segunda 08h UTC)
+      COLLECT_HOUR_UTC:   ${COLLECT_HOUR_UTC:-6}
+      REPORT_DAY_OF_WEEK: ${REPORT_DAY_OF_WEEK:-mon}
+      REPORT_HOUR_UTC:    ${REPORT_HOUR_UTC:-8}
+    secrets:
+      - gee_key
+    volumes:
+      - .:/app           # hot-reload em desenvolvimento (remova em produção)
 
 secrets:
   gee_key:

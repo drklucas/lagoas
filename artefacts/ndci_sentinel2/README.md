@@ -20,15 +20,17 @@ Sentinel-2 (GEE)
                ▼
         PostgreSQL (pg_data)
                │
-               ▼
-┌─────────────────────────────────┐
-│  FastAPI  :8001                 │  /api/water-quality, /api/workers, /docs
-│  frontend (HTML/CSS/JS)         │  Chart.js + chartjs-plugin-annotation
-└──────────────┬──────────────────┘
-               │
-               ▼
-      GitHub Pages (estático)
-      build_static.py --deploy
+        ┌──────┴──────┐
+        ▼             ▼
+┌───────────────┐  ┌──────────────────────────────────┐
+│  FastAPI :8001│  │  scheduler (report_scheduler.py) │
+│  frontend     │  │  · coleta diária (ano corrente)  │
+│  HTML/CSS/JS  │  │  · boletim semanal por e-mail     │
+└───────┬───────┘  └──────────────────────────────────┘
+        │
+        ▼
+  GitHub Pages (estático)
+  build_static.py --deploy
 ```
 
 ---
@@ -186,7 +188,155 @@ O site ficará disponível em `https://drklucas.github.io/lagoas/`.
 | POST | `/api/workers/collect-stats` | Inicia coleta de estatísticas |
 | POST | `/api/workers/generate-tiles` | Gera tiles visuais |
 | GET | `/api/workers/status` | Contagem de registros no banco |
+| POST | `/api/notifications/trigger-report` | Dispara relatório por e-mail manualmente |
+| GET | `/api/notifications/report-log` | Histórico de relatórios enviados |
 | GET | `/docs` | Documentação interativa (Swagger UI) |
+
+---
+
+## Boletim semanal por e-mail
+
+O sistema envia automaticamente um boletim HTML toda segunda-feira com o status de qualidade da água de cada lagoa, baseado nas observações mais recentes do satélite.
+
+### Como funciona
+
+O serviço `scheduler` (container Docker separado) executa dois jobs:
+
+| Job | Horário | O que faz |
+|---|---|---|
+| `collect_recent` | Diário, 06h UTC | Coleta dados GEE **somente do ano corrente** — nunca backfill histórico |
+| `send_weekly_report` | Toda segunda, 08h UTC | Gera o HTML e envia por SMTP para os destinatários configurados |
+
+O relatório busca apenas observações dos **últimos 21 dias** (configurável via `REPORT_LOOKBACK_DAYS`), alinhado com a revisita do Sentinel-2 (~5 dias). Lagoas sem passagem recente válida aparecem com aviso "Sem dados recentes" em vez de dados desatualizados.
+
+A idempotência é garantida pela tabela `ndci_report_log`: cada período ISO (ex: `2026-W15`) é enviado no máximo uma vez, mesmo que o container reinicie.
+
+### Configuração
+
+**1. Preencha as variáveis SMTP no `.env`:**
+
+```bash
+# Servidor de saída — exemplos:
+#   Gmail (com App Password):  smtp.gmail.com  porta 587
+#   SendGrid:                  smtp.sendgrid.net  porta 587  user=apikey
+#   Office 365:                smtp.office365.com  porta 587
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=seu_email@gmail.com
+SMTP_PASSWORD=xxxx xxxx xxxx xxxx   # App Password do Gmail (não a senha da conta)
+SMTP_FROM=                          # opcional — usa SMTP_USER se vazio
+
+# Lista de destinatários separados por vírgula
+REPORT_RECIPIENTS=gestor@prefeitura.gov.br,pesquisador@ifrs.edu.br
+```
+
+> **Gmail**: acesse [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords), crie uma "App Password" para "Mail" e use-a em `SMTP_PASSWORD`. A autenticação de dois fatores deve estar ativada na conta.
+
+> **SendGrid**: crie uma API Key em sendgrid.com, use `apikey` como `SMTP_USER` e a chave como `SMTP_PASSWORD`.
+
+**2. Suba os serviços (o scheduler sobe junto):**
+
+```bash
+docker compose up -d
+
+# Confirme que o scheduler está rodando:
+docker compose ps
+docker compose logs scheduler
+```
+
+**3. Teste o envio imediatamente** (sem esperar a segunda-feira):
+
+```bash
+# Gera e envia agora mesmo, ignorando a verificação de idempotência
+curl -X POST "http://localhost:8001/api/notifications/trigger-report?force=true"
+
+# Forma nativa PowerShell
+Invoke-RestMethod -Method POST "http://localhost:8001/api/notifications/trigger-report?force=true"
+
+# Com janela de busca personalizada (ex: últimos 14 dias)
+curl -X POST "http://localhost:8001/api/notifications/trigger-report?force=true&lookback_days=14"
+
+# Forma nativa PowerShell
+Invoke-RestMethod -Method POST "http://localhost:8001/api/notifications/trigger-report?force=true&lookback_days=14"
+```
+
+**4. Verifique o histórico de envios:**
+
+```bash
+curl http://localhost:8001/api/notifications/report-log
+
+Invoke-RestMethod -Method GET "http://localhost:8001/api/notifications/report-log"
+
+```
+
+
+Resposta de exemplo:
+
+```json
+{
+  "total": 2,
+  "records": [
+    {
+      "id": 2,
+      "report_period": "2026-W16",
+      "recipients": "gestor@prefeitura.gov.br",
+      "status": "sent",
+      "error_message": null,
+      "sent_at": "2026-04-20T08:00:12"
+    },
+    {
+      "id": 1,
+      "report_period": "2026-W15",
+      "recipients": "gestor@prefeitura.gov.br",
+      "status": "sent",
+      "error_message": null,
+      "sent_at": "2026-04-13T08:00:09"
+    }
+  ]
+}
+```
+
+### Ajustar horários e janela de dados
+
+| Variável | Padrão | Descrição |
+|---|---|---|
+| `REPORT_LOOKBACK_DAYS` | `21` | Dias para trás na busca de observações recentes |
+| `COLLECT_HOUR_UTC` | `6` | Hora UTC da coleta diária (06h UTC = 03h BRT) |
+| `REPORT_DAY_OF_WEEK` | `mon` | Dia da semana do boletim (`mon` `tue` `wed` … `sun`) |
+| `REPORT_HOUR_UTC` | `8` | Hora UTC do envio (08h UTC = 05h BRT) |
+
+Para alterar, edite o `.env` e reinicie o scheduler:
+
+```bash
+docker compose restart scheduler
+```
+
+### Acompanhar logs do scheduler
+
+```bash
+# Logs em tempo real
+docker compose logs -f scheduler
+
+# Saída esperada em um dia de coleta:
+# [INFO] collect_recent: iniciando coleta para o ano 2026
+# [INFO] Stats: Lagoa dos Barros — 3 imagens a processar
+# [INFO] collect_recent: concluído — salvos=5 pulados=12 erros=0
+
+# Saída esperada na segunda-feira:
+# [INFO] send_weekly_report: verificando período 2026-W16
+# [INFO] send_weekly_report: gerando relatório para 2026-W16 (janela=21 dias)
+# [INFO] E-mail enviado com sucesso para: gestor@prefeitura.gov.br
+# [INFO] send_weekly_report: enviado com sucesso — período=2026-W16
+```
+
+### Diagnóstico de problemas
+
+| Sintoma | Causa provável | Solução |
+|---|---|---|
+| `SMTP_HOST, SMTP_USER e SMTP_PASSWORD devem estar configuradas` | Variáveis ausentes no `.env` | Preencha as três variáveis e reinicie o scheduler |
+| `SMTPAuthenticationError` | Senha ou App Password incorreta | Gere uma nova App Password / verifique API Key |
+| Status `skipped` com `already_sent` | Período já foi enviado nesta semana | Use `?force=true` para reenviar |
+| Lagoa aparece como "Sem dados recentes" | Nenhuma passagem válida na janela | Aumente `REPORT_LOOKBACK_DAYS` ou aguarde a próxima passagem do satélite |
 
 ---
 
@@ -199,7 +349,8 @@ ndci_sentinel2/
 │   └── routers/
 │       ├── water_quality.py       # Endpoints de dados
 │       ├── workers.py             # Endpoints de disparo de workers
-│       └── tiles.py               # Endpoints de tiles XYZ
+│       ├── tiles.py               # Endpoints de tiles XYZ
+│       └── notifications.py       # Endpoints de relatórios por e-mail
 ├── config.py                      # Lagoas, polígonos GEE, parâmetros
 ├── core/
 │   ├── index_registry.py          # Índices espectrais (NDCI, NDTI, NDWI)
@@ -221,10 +372,18 @@ ndci_sentinel2/
 ├── migrations/
 │   ├── 001_water_quality.sql
 │   ├── 002_map_tiles.sql
-│   └── 003_image_records.sql
+│   ├── 003_image_records.sql
+│   └── 005_report_log.sql         # Log de idempotência dos relatórios
 ├── ml/
 │   ├── features.py
 │   └── predictor.py
+├── notifications/
+│   ├── email_sender.py            # Envio SMTP via smtplib
+│   ├── report_builder.py          # Monta o HTML com dados recentes
+│   └── templates/
+│       └── weekly_report.html.j2  # Template Jinja2 (CSS inline)
+├── scheduler/
+│   └── report_scheduler.py        # APScheduler: coleta diária + boletim semanal
 ├── scripts/
 │   └── build_static.py            # Build + deploy GitHub Pages
 ├── storage/
@@ -232,7 +391,8 @@ ndci_sentinel2/
 │   └── repositories/
 │       ├── water_quality.py
 │       ├── image_records.py
-│       └── map_tiles.py
+│       ├── map_tiles.py
+│       └── report_log.py          # Repositório de idempotência dos relatórios
 ├── .env.example
 ├── docker-compose.yml
 ├── Dockerfile
