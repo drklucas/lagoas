@@ -154,11 +154,15 @@ def job_send_weekly_report(force: bool = False) -> dict:
             report_period=period,
         )
 
-        # Envia o e-mail
+        # Envia o e-mail com PDF e imagens de satélite em anexo
+        iso_period = period.replace("-", "_")
         send_email(
             subject=payload.subject,
             html_body=payload.html,
             recipients=REPORT_RECIPIENTS,
+            pdf_attachment=payload.pdf_bytes,
+            pdf_filename=f"relatorio_ndci_{iso_period}.pdf",
+            image_attachments=payload.image_attachments,
         )
 
         # Registra o envio bem-sucedido

@@ -20,6 +20,8 @@ from __future__ import annotations
 import logging
 import os
 import smtplib
+from email.mime.application import MIMEApplication
+from email.mime.image import MIMEImage
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
@@ -35,19 +37,25 @@ def send_email(
     html_body: str,
     recipients: list[str],
     plain_body: str | None = None,
+    pdf_attachment: bytes | None = None,
+    pdf_filename: str = "relatorio_ndci.pdf",
+    image_attachments: list[tuple[bytes, str]] | None = None,
 ) -> None:
     """
-    Envia um e-mail com corpo HTML (e texto simples de fallback).
+    Envia e-mail com corpo HTML, PDF opcional e imagens opcionais em anexo.
 
     Args:
-        subject:    Assunto do e-mail.
-        html_body:  Corpo em HTML (CSS inline para compatibilidade com clientes de e-mail).
-        recipients: Lista de endereços de destino.
-        plain_body: Corpo em texto simples (fallback). Se None, gerado automaticamente.
+        subject:           Assunto do e-mail.
+        html_body:         Corpo HTML (pode conter data URIs para imagens inline).
+        recipients:        Lista de destinatários.
+        plain_body:        Fallback texto simples. Se None, gerado automaticamente.
+        pdf_attachment:    Bytes do PDF a anexar (opcional).
+        pdf_filename:      Nome do arquivo PDF no e-mail.
+        image_attachments: Lista de (bytes_png, nome_arquivo) a anexar (opcional).
 
     Raises:
-        ValueError: Se alguma variável de ambiente obrigatória estiver ausente.
-        smtplib.SMTPException: Em caso de falha de autenticação ou envio.
+        ValueError:             Variáveis SMTP obrigatórias ausentes.
+        smtplib.SMTPException:  Falha de autenticação ou envio.
     """
     smtp_host = _cfg("SMTP_HOST")
     smtp_user = _cfg("SMTP_USER")
@@ -67,33 +75,58 @@ def send_email(
         logger.warning("send_email: lista de destinatários vazia — e-mail não enviado.")
         return
 
-    # Monta a mensagem
-    msg = MIMEMultipart("alternative")
+    if plain_body is None:
+        plain_body = _html_to_plain(subject)
+
+    has_attachments = bool(pdf_attachment) or bool(image_attachments)
+
+    if has_attachments:
+        # Estrutura: mixed → [alternative → plain + html] + pdf + images
+        msg = MIMEMultipart("mixed")
+        body_part = MIMEMultipart("alternative")
+        body_part.attach(MIMEText(plain_body, "plain", "utf-8"))
+        body_part.attach(MIMEText(html_body,  "html",  "utf-8"))
+        msg.attach(body_part)
+
+        if pdf_attachment:
+            pdf_part = MIMEApplication(pdf_attachment, _subtype="pdf")
+            pdf_part.add_header(
+                "Content-Disposition", "attachment", filename=pdf_filename
+            )
+            msg.attach(pdf_part)
+
+        for img_bytes, img_name in (image_attachments or []):
+            img_part = MIMEImage(img_bytes, _subtype="png")
+            img_part.add_header(
+                "Content-Disposition", "attachment", filename=img_name
+            )
+            msg.attach(img_part)
+    else:
+        msg = MIMEMultipart("alternative")
+        msg.attach(MIMEText(plain_body, "plain", "utf-8"))
+        msg.attach(MIMEText(html_body,  "html",  "utf-8"))
+
     msg["Subject"] = subject
     msg["From"]    = smtp_from
     msg["To"]      = ", ".join(recipients)
 
-    # Parte texto simples (fallback para clientes que não renderizam HTML)
-    if plain_body is None:
-        plain_body = _html_to_plain(subject)
-    msg.attach(MIMEText(plain_body, "plain", "utf-8"))
-
-    # Parte HTML (preferida pelos clientes modernos)
-    msg.attach(MIMEText(html_body, "html", "utf-8"))
-
     logger.info(
-        "Enviando e-mail '%s' para %d destinatário(s) via %s:%d",
-        subject, len(recipients), smtp_host, smtp_port,
+        "Enviando e-mail '%s' para %d destinatário(s) via %s:%d "
+        "(pdf=%s imagens=%d)",
+        subject,
+        len(recipients),
+        smtp_host,
+        smtp_port,
+        pdf_attachment is not None,
+        len(image_attachments or []),
     )
 
     try:
         if use_ssl:
-            # Porta 465 — SSL direto
             with smtplib.SMTP_SSL(smtp_host, smtp_port) as server:
                 server.login(smtp_user, smtp_pass)
                 server.sendmail(smtp_from, recipients, msg.as_string())
         else:
-            # Porta 587 — STARTTLS (recomendado)
             with smtplib.SMTP(smtp_host, smtp_port) as server:
                 server.ehlo()
                 server.starttls()
@@ -112,17 +145,19 @@ def send_email(
 
 
 def _html_to_plain(subject: str) -> str:
-    """Gera um corpo de texto simples mínimo como fallback."""
+    """Gera corpo de texto simples mínimo como fallback para clientes sem HTML."""
     return (
         f"{subject}\n\n"
-        "Este e-mail contém um relatório de qualidade da água das lagoas costeiras "
-        "do Litoral Norte do RS.\n\n"
-        "Para visualizar o relatório completo, abra este e-mail em um cliente que "
-        "suporte HTML ou acesse o dashboard:\n"
+        "Este e-mail contém o boletim semanal de qualidade da água das lagoas costeiras "
+        "do Litoral Norte do RS, gerado via NDCI/Sentinel-2.\n\n"
+        "Para visualizar o relatório completo com imagens de satélite, abra este e-mail "
+        "em um cliente que suporte HTML ou acesse o dashboard:\n"
         "https://drklucas.github.io/lagoas/\n\n"
+        "O relatório completo em PDF está anexado a este e-mail.\n\n"
         "---\n"
         "NDCI/Sentinel-2 · Monitoramento via Google Earth Engine\n"
         "Metodologia: Pi & Guasselli, SBSR 2025\n"
+        "IFRS Osório\n"
     )
 
 

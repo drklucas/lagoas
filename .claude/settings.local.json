@@ -39,7 +39,11 @@
       "Bash(git push:*)",
       "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); [print\\(k, json.dumps\\({kk:vv for kk,vv in v.items\\(\\) if kk!='periodos_por_lagoa'}, ensure_ascii=False\\)\\) for k,v in d.items\\(\\)]\")",
       "Bash(docker exec *)",
-      "Bash(python3 -c ' *)"
+      "Bash(python3 -c ' *)",
+      "Bash(mkdir -p \"C:/Users/User/Desktop/IFRS/lagoas/artefacts/ndci_sentinel2/notifications/assets\")",
+      "Bash(cp \"/c/Users/User/Downloads/Logo-IFRS-cores-sem-fundo-Horizontal.png\" \"C:/Users/User/Desktop/IFRS/lagoas/artefacts/ndci_sentinel2/notifications/assets/logo_ifrs.png\")",
+      "Bash(cp \"/c/Users/User/Downloads/logo_northwind.png\" \"C:/Users/User/Desktop/IFRS/lagoas/artefacts/ndci_sentinel2/notifications/assets/logo_project.png\")",
+      "Bash(docker run *)"
     ]
   }
 }

@@ -4,37 +4,63 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>{{ subject }}</title>
+<style>
+  /* WeasyPrint: restringe imagens ao container e define tamanho de página */
+  @page { size: A4 portrait; margin: 1.2cm 1.5cm; }
+  img   { max-width: 100% !important; height: auto !important; }
+  table { max-width: 100% !important; }
+</style>
 </head>
-<body style="margin:0;padding:0;background-color:#f0f4f8;font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#1a202c;">
+<body style="margin:0;padding:0;background-color:#eef2f7;
+             font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#1a202c;">
 
-<table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f0f4f8;">
+<table width="100%" cellpadding="0" cellspacing="0" border="0"
+       style="background-color:#eef2f7;">
   <tr>
-    <td align="center" style="padding:24px 16px;">
+    <td align="center" style="padding:28px 16px 32px;">
 
-      <!-- Container principal -->
-      <table width="640" cellpadding="0" cellspacing="0" border="0"
-             style="max-width:640px;width:100%;background-color:#ffffff;border-radius:8px;
-                    box-shadow:0 2px 8px rgba(0,0,0,0.08);overflow:hidden;">
+      <!-- ── Wrapper 600 px ───────────────────────────────────────────────── -->
+      <table width="600" cellpadding="0" cellspacing="0" border="0"
+             style="max-width:600px;width:100%;background-color:#ffffff;
+                    border-radius:12px;
+                    box-shadow:0 4px 20px rgba(0,0,0,0.10);overflow:hidden;">
 
-        <!-- Cabeçalho -->
+        <!-- ── Cabeçalho ──────────────────────────────────────────────────── -->
         <tr>
-          <td style="background-color:#1a4a7a;padding:28px 32px 24px;">
+          <td style="background:linear-gradient(135deg,#0a2a52 0%,#1a6ba8 100%);
+                     padding:28px 32px 22px;">
             <table width="100%" cellpadding="0" cellspacing="0" border="0">
               <tr>
-                <td>
-                  <p style="margin:0 0 4px 0;font-size:11px;color:#93c5fd;text-transform:uppercase;
-                             letter-spacing:1px;">Monitoramento de Qualidade da Água</p>
-                  <h1 style="margin:0;font-size:22px;color:#ffffff;font-weight:700;line-height:1.3;">
+                <td valign="top">
+                  {% if logo_project_b64 %}
+                  <img src="{{ logo_project_b64 }}"
+                       alt="Sistema de Monitoramento"
+                       style="display:block;width:52px;height:52px;
+                              margin-bottom:12px;border-radius:50%;
+                              background:#fff;padding:2px;" />
+                  {% endif %}
+                  <p style="margin:0 0 3px;font-size:10px;color:#93c5fd;
+                             text-transform:uppercase;letter-spacing:2px;">
+                    Monitoramento de Qualidade da Água
+                  </p>
+                  <h1 style="margin:0;font-size:21px;color:#ffffff;
+                             font-weight:700;line-height:1.3;">
                     Boletim Semanal — Lagoas Costeiras
                   </h1>
-                  <p style="margin:8px 0 0 0;font-size:13px;color:#bfdbfe;">
-                    Litoral Norte do RS &nbsp;·&nbsp; Período: <strong>{{ report_period }}</strong>
+                  <p style="margin:6px 0 0;font-size:13px;color:#bfdbfe;">
+                    Litoral Norte do RS &nbsp;·&nbsp;
+                    Período: <strong style="color:#fff;">{{ report_period }}</strong>
                   </p>
                 </td>
-                <td align="right" valign="top" style="white-space:nowrap;">
-                  <p style="margin:0;font-size:11px;color:#93c5fd;">Gerado em</p>
-                  <p style="margin:4px 0 0 0;font-size:13px;color:#ffffff;font-weight:600;">
-                    {{ generated_at }}
+                <td align="right" valign="top"
+                    style="white-space:nowrap;padding-left:16px;">
+                  <p style="margin:0;font-size:10px;color:#93c5fd;">Emitido em</p>
+                  <p style="margin:4px 0 0;font-size:13px;color:#ffffff;
+                             font-weight:600;">{{ generated_at }}</p>
+                  <p style="margin:10px 0 0;font-size:11px;color:#7eb8f0;
+                             line-height:1.5;">
+                    Satélite: Sentinel-2<br/>
+                    Índice: NDCI
                   </p>
                 </td>
               </tr>
@@ -42,36 +68,33 @@
           </td>
         </tr>
 
-        <!-- Bloco de alertas críticos / elevados -->
+        <!-- ── Card de alerta (crítico / elevado) ─────────────────────────── -->
         {% set alert_lagoas = lagoas | selectattr("status", "in", ["critico", "elevado"]) | list %}
         {% if alert_lagoas %}
         <tr>
-          <td style="padding:0 32px;">
+          <td style="padding:16px 32px 0;">
             <table width="100%" cellpadding="0" cellspacing="0" border="0"
-                   style="margin-top:20px;background-color:#fff7ed;border-left:4px solid #ea580c;
-                          border-radius:4px;padding:16px;">
+                   style="background-color:#fff7ed;border-left:4px solid #ea580c;
+                          border-radius:6px;">
               <tr>
-                <td style="padding:16px;">
-                  <p style="margin:0 0 8px 0;font-size:13px;font-weight:700;color:#9a3412;">
+                <td style="padding:14px 16px;">
+                  <p style="margin:0 0 10px;font-size:13px;font-weight:700;
+                             color:#9a3412;">
                     ⚠ ATENÇÃO — Lagoas com nível elevado ou crítico de clorofila
                   </p>
                   {% for lg in alert_lagoas %}
-                  <table width="100%" cellpadding="0" cellspacing="0" border="0"
-                         style="margin-bottom:6px;">
-                    <tr>
-                      <td style="font-size:13px;color:#7c2d12;">
-                        <strong>{{ lg.lagoa }}</strong>
-                        &nbsp;·&nbsp;
-                        NDCI médio: <strong>{{ "%.4f"|format(lg.ndci_mean) if lg.ndci_mean is not none else "—" }}</strong>
-                        &nbsp;·&nbsp;
-                        <span style="background-color:{{ lg.status_color }};color:#fff;
-                                     padding:2px 8px;border-radius:3px;font-size:11px;font-weight:700;">
-                          {{ lg.status | upper }}
-                        </span>
-                        &nbsp;·&nbsp; Observação: <strong>{{ lg.data }}</strong>
-                      </td>
-                    </tr>
-                  </table>
+                  <p style="margin:0 0 5px;font-size:13px;color:#7c2d12;">
+                    <strong>{{ lg.lagoa }}</strong>
+                    &nbsp;·&nbsp;
+                    NDCI médio: <strong>{{ "%.4f"|format(lg.ndci_mean) if lg.ndci_mean is not none else "—" }}</strong>
+                    &nbsp;·&nbsp;
+                    <span style="background-color:{{ lg.status_color }};color:#fff;
+                                 padding:1px 8px;border-radius:3px;
+                                 font-size:11px;font-weight:700;">
+                      {{ lg.status | upper }}
+                    </span>
+                    &nbsp;·&nbsp; Observação: <strong>{{ lg.data }}</strong>
+                  </p>
                   {% endfor %}
                 </td>
               </tr>
@@ -80,14 +103,17 @@
         </tr>
         {% endif %}
 
-        <!-- Seção: tabela de status por lagoa -->
+        <!-- ── Seção: tabela de status ────────────────────────────────────── -->
+        {% set active_lagoas = lagoas | rejectattr("sem_observacao_recente") | list %}
+        {% if active_lagoas %}
         <tr>
-          <td style="padding:24px 32px 8px;">
-            <h2 style="margin:0 0 12px 0;font-size:15px;font-weight:700;color:#1a4a7a;
-                       border-bottom:2px solid #e2e8f0;padding-bottom:8px;">
+          <td style="padding:22px 32px 6px;">
+            <h2 style="margin:0 0 6px;font-size:15px;font-weight:700;
+                       color:#0a2a52;border-bottom:2px solid #e2e8f0;
+                       padding-bottom:8px;">
               Status por Lagoa — Observações Recentes
             </h2>
-            <p style="margin:0 0 16px 0;font-size:12px;color:#64748b;">
+            <p style="margin:0 0 14px;font-size:12px;color:#64748b;">
               Janela de busca: últimos <strong>{{ lookback_days }} dias</strong>.
               Metodologia: NDCI/Sentinel-2 por imagem individual
               (Pi &amp; Guasselli, SBSR 2025).
@@ -95,15 +121,14 @@
           </td>
         </tr>
         <tr>
-          <td style="padding:0 32px 24px;">
+          <td style="padding:0 32px 20px;">
             <table width="100%" cellpadding="0" cellspacing="0" border="0"
                    style="border-collapse:collapse;font-size:13px;">
-              <!-- Cabeçalho da tabela -->
-              <tr style="background-color:#1a4a7a;color:#ffffff;">
+              <tr style="background-color:#0a2a52;color:#ffffff;">
                 <th style="padding:10px 12px;text-align:left;font-weight:600;
                            border-radius:4px 0 0 0;">Lagoa</th>
                 <th style="padding:10px 12px;text-align:center;font-weight:600;">
-                  Observação</th>
+                  Data</th>
                 <th style="padding:10px 12px;text-align:center;font-weight:600;">
                   NDCI médio</th>
                 <th style="padding:10px 12px;text-align:center;font-weight:600;">
@@ -115,134 +140,204 @@
                 <th style="padding:10px 12px;text-align:center;font-weight:600;
                            border-radius:0 4px 0 0;">Status</th>
               </tr>
-
-              {% for lg in lagoas %}
+              {% for lg in active_lagoas %}
               <tr style="background-color:{{ '#f8fafc' if loop.index is odd else '#ffffff' }};
                          border-bottom:1px solid #e2e8f0;">
-                <td style="padding:10px 12px;font-weight:600;color:#1e293b;">
+                <td style="padding:9px 12px;font-weight:600;color:#1e293b;">
                   {{ lg.lagoa }}
                 </td>
-                <td style="padding:10px 12px;text-align:center;color:#475569;">
-                  {% if lg.sem_observacao_recente %}
-                    <span style="color:#94a3b8;font-style:italic;">Sem dados recentes</span>
-                  {% else %}
-                    {{ lg.data }}
-                  {% endif %}
+                <td style="padding:9px 12px;text-align:center;color:#475569;">
+                  {{ lg.data }}
                 </td>
-                <td style="padding:10px 12px;text-align:center;color:#1e293b;">
+                <td style="padding:9px 12px;text-align:center;font-weight:600;
+                           color:#1e293b;">
                   {{ "%.4f"|format(lg.ndci_mean) if lg.ndci_mean is not none else "—" }}
                 </td>
-                <td style="padding:10px 12px;text-align:center;color:#1e293b;">
+                <td style="padding:9px 12px;text-align:center;color:#1e293b;">
                   {{ "%.4f"|format(lg.ndci_p90) if lg.ndci_p90 is not none else "—" }}
                 </td>
-                <td style="padding:10px 12px;text-align:center;color:#1e293b;">
+                <td style="padding:9px 12px;text-align:center;color:#1e293b;">
                   {{ "%.4f"|format(lg.ndti_mean) if lg.ndti_mean is not none else "—" }}
                 </td>
-                <td style="padding:10px 12px;text-align:center;color:#475569;">
+                <td style="padding:9px 12px;text-align:center;color:#475569;">
                   {% if lg.n_pixels is not none %}
                     {{ "{:,}".format(lg.n_pixels) }}
                     {% if lg.cloud_pct is not none %}
-                      <br/><span style="font-size:11px;color:#94a3b8;">
-                        ☁ {{ "%.0f"|format(lg.cloud_pct) }}%
-                      </span>
+                    <br/><span style="font-size:11px;color:#94a3b8;">
+                      nv. {{ "%.0f"|format(lg.cloud_pct) }}%
+                    </span>
                     {% endif %}
                   {% else %}
                     —
                   {% endif %}
                 </td>
-                <td style="padding:10px 12px;text-align:center;">
-                  {% if lg.sem_observacao_recente %}
-                    <span style="background-color:#94a3b8;color:#fff;
-                                 padding:3px 10px;border-radius:3px;font-size:11px;font-weight:700;">
-                      SEM DADOS
-                    </span>
-                  {% else %}
-                    <span style="background-color:{{ lg.status_color }};color:#fff;
-                                 padding:3px 10px;border-radius:3px;font-size:11px;font-weight:700;">
-                      {{ lg.status | upper }}
-                    </span>
-                  {% endif %}
+                <td style="padding:9px 12px;text-align:center;">
+                  <span style="background-color:{{ lg.status_color }};color:#fff;
+                               padding:3px 10px;border-radius:3px;
+                               font-size:11px;font-weight:700;">
+                    {{ lg.status | upper }}
+                  </span>
                 </td>
               </tr>
               {% endfor %}
             </table>
           </td>
         </tr>
-
-        <!-- Legenda de cores -->
-        <tr>
-          <td style="padding:0 32px 24px;">
-            <table cellpadding="0" cellspacing="0" border="0">
-              <tr>
-                <td style="font-size:12px;color:#64748b;padding-right:8px;">Legenda NDCI:</td>
-                <td style="padding-right:6px;">
-                  <span style="background-color:#22c55e;color:#fff;padding:2px 8px;
-                               border-radius:3px;font-size:11px;font-weight:700;">BOM</span>
-                </td>
-                <td style="font-size:11px;color:#64748b;padding-right:10px;">&lt; 0,02</td>
-                <td style="padding-right:6px;">
-                  <span style="background-color:#eab308;color:#fff;padding:2px 8px;
-                               border-radius:3px;font-size:11px;font-weight:700;">MODERADO</span>
-                </td>
-                <td style="font-size:11px;color:#64748b;padding-right:10px;">0,02–0,10</td>
-                <td style="padding-right:6px;">
-                  <span style="background-color:#f97316;color:#fff;padding:2px 8px;
-                               border-radius:3px;font-size:11px;font-weight:700;">ELEVADO</span>
-                </td>
-                <td style="font-size:11px;color:#64748b;padding-right:10px;">0,10–0,20</td>
-                <td style="padding-right:6px;">
-                  <span style="background-color:#ef4444;color:#fff;padding:2px 8px;
-                               border-radius:3px;font-size:11px;font-weight:700;">CRÍTICO</span>
-                </td>
-                <td style="font-size:11px;color:#64748b;">&gt; 0,20</td>
-              </tr>
-            </table>
-          </td>
-        </tr>
-
-        <!-- Nota sobre cobertura de nuvens -->
-        {% set sem_dados = lagoas | selectattr("sem_observacao_recente") | list %}
-        {% if sem_dados %}
-        <tr>
-          <td style="padding:0 32px 20px;">
-            <table width="100%" cellpadding="0" cellspacing="0" border="0"
-                   style="background-color:#f1f5f9;border-radius:4px;">
-              <tr>
-                <td style="padding:12px 16px;font-size:12px;color:#475569;">
-                  <strong>Lagoas sem observação recente</strong>
-                  (janela de {{ lookback_days }} dias):
-                  {% for lg in sem_dados %}{{ lg.lagoa }}{% if not loop.last %}, {% endif %}{% endfor %}.
-                  Possíveis causas: cobertura de nuvens elevada ou passagem do satélite ainda
-                  não processada. O próximo boletim incluirá os dados assim que disponíveis.
-                </td>
-              </tr>
-            </table>
-          </td>
-        </tr>
         {% endif %}
 
-        <!-- Rodapé -->
+        <!-- ── Legenda NDCI ───────────────────────────────────────────────── -->
         <tr>
-          <td style="background-color:#f8fafc;border-top:1px solid #e2e8f0;
-                     padding:20px 32px;border-radius:0 0 8px 8px;">
+          <td style="padding:0 32px 22px;">
+            <table cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td style="font-size:12px;color:#64748b;font-weight:600;
+                           padding-right:10px;">
+                  Legenda:
+                </td>
+                <td style="padding-right:5px;">
+                  <span style="background-color:#22c55e;color:#fff;padding:2px 8px;
+                               border-radius:3px;font-size:11px;font-weight:700;">
+                    BOM
+                  </span>
+                </td>
+                <td style="font-size:11px;color:#64748b;padding-right:12px;">
+                  &lt;&nbsp;0,02
+                </td>
+                <td style="padding-right:5px;">
+                  <span style="background-color:#eab308;color:#fff;padding:2px 8px;
+                               border-radius:3px;font-size:11px;font-weight:700;">
+                    MODERADO
+                  </span>
+                </td>
+                <td style="font-size:11px;color:#64748b;padding-right:12px;">
+                  0,02–0,10
+                </td>
+                <td style="padding-right:5px;">
+                  <span style="background-color:#f97316;color:#fff;padding:2px 8px;
+                               border-radius:3px;font-size:11px;font-weight:700;">
+                    ELEVADO
+                  </span>
+                </td>
+                <td style="font-size:11px;color:#64748b;padding-right:12px;">
+                  0,10–0,20
+                </td>
+                <td style="padding-right:5px;">
+                  <span style="background-color:#ef4444;color:#fff;padding:2px 8px;
+                               border-radius:3px;font-size:11px;font-weight:700;">
+                    CRÍTICO
+                  </span>
+                </td>
+                <td style="font-size:11px;color:#64748b;">&gt;&nbsp;0,20</td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <!-- ── Divisor ────────────────────────────────────────────────────── -->
+        {% set imaged_lagoas = active_lagoas | selectattr("map_image_b64") | list %}
+        {% if imaged_lagoas %}
+        <tr>
+          <td style="padding:0 32px 8px;">
+            <table width="100%" cellpadding="0" cellspacing="0" border="0"
+                   style="border-top:2px solid #e2e8f0;">
+              <tr>
+                <td style="padding-top:20px;">
+                  <h2 style="margin:0 0 4px;font-size:15px;font-weight:700;
+                             color:#0a2a52;">
+                    Imagens de Satélite — Índice NDCI
+                  </h2>
+                  <p style="margin:0 0 16px;font-size:12px;color:#64748b;">
+                    Visualização por imagem individual (Sentinel-2).
+                    Escala de cores: azul-marinho (baixo NDCI) → vermelho (bloom intenso).
+                    As imagens também estão anexadas a este e-mail.
+                  </p>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <!-- ── Cards de imagem por lagoa ─────────────────────────────────── -->
+        {% for lg in imaged_lagoas %}
+        <tr>
+          <td style="padding:0 32px {{ '20px' if loop.last else '0' }};">
+            <table width="100%" cellpadding="0" cellspacing="0" border="0"
+                   style="margin-bottom:16px;border:1px solid #dde5ef;
+                          border-radius:8px;overflow:hidden;">
+              <!-- Card header -->
+              <tr>
+                <td style="background-color:#f1f5fb;padding:10px 14px;
+                           border-bottom:1px solid #dde5ef;">
+                  <table cellpadding="0" cellspacing="0" border="0">
+                    <tr>
+                      <td style="font-size:13px;font-weight:700;color:#1e293b;
+                                 padding-right:8px;">
+                        {{ lg.lagoa }}
+                      </td>
+                      <td>
+                        <span style="background-color:{{ lg.status_color }};color:#fff;
+                                     padding:2px 8px;border-radius:3px;
+                                     font-size:11px;font-weight:700;">
+                          {{ lg.status | upper }}
+                        </span>
+                      </td>
+                      <td style="font-size:12px;color:#64748b;padding-left:10px;">
+                        {{ lg.data }}
+                        &nbsp;·&nbsp;
+                        NDCI&nbsp;{{ "%.4f"|format(lg.ndci_mean) if lg.ndci_mean is not none else "—" }}
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+              <!-- Imagem -->
+              <tr>
+                <td style="padding:0;line-height:0;">
+                  <img src="{{ lg.map_image_b64 }}"
+                       alt="Mapa NDCI — {{ lg.lagoa }}"
+                       width="536"
+                       style="display:block;width:100%;height:auto;
+                              max-width:536px;" />
+                </td>
+              </tr>
+              <!-- Card footer com atribuição -->
+              <tr>
+                <td style="background-color:#f8fafc;padding:5px 14px;
+                           border-top:1px solid #e2e8f0;">
+                  <p style="margin:0;font-size:10px;color:#94a3b8;text-align:right;">
+                    Sentinel-2 NDCI · Google Earth Engine · © OpenStreetMap contributors
+                  </p>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+        {% endfor %}
+        {% endif %}
+
+        <!-- ── Rodapé ──────────────────────────────────────────────────────── -->
+        <tr>
+          <td style="background-color:#f1f5fb;border-top:1px solid #dde5ef;
+                     padding:22px 32px;border-radius:0 0 12px 12px;">
             <table width="100%" cellpadding="0" cellspacing="0" border="0">
               <tr>
-                <td style="font-size:12px;color:#64748b;">
-                  <p style="margin:0 0 6px 0;">
+                <td valign="middle">
+                  {% if logo_ifrs_b64 %}
+                  <img src="{{ logo_ifrs_b64 }}"
+                       alt="Instituto Federal de Educação, Ciência e Tecnologia do Rio Grande do Sul"
+                       style="display:block;height:24px;width:auto;
+                              max-width:180px;margin-bottom:10px;" />
+                  {% endif %}
+                  <p style="margin:0 0 5px;font-size:12px;">
                     <a href="https://drklucas.github.io/lagoas/"
-                       style="color:#1a4a7a;font-weight:600;text-decoration:none;">
+                       style="color:#0a2a52;font-weight:600;text-decoration:none;">
                       Acessar dashboard completo →
                     </a>
                   </p>
-                  <p style="margin:0;color:#94a3b8;">
-                    Satélite: Sentinel-2 (COPERNICUS/S2_SR_HARMONIZED) via Google Earth Engine.
+                  <p style="margin:0;font-size:11px;color:#94a3b8;line-height:1.6;">
+                    Satélite: Sentinel-2 (COPERNICUS/S2_SR_HARMONIZED) via Google Earth Engine.<br/>
                     Metodologia: Pi &amp; Guasselli, SBSR 2025.
-                    Limiar de eflorescência ≈ 14 µg/L (NDCI ≈ 0,10).
-                  </p>
-                </td>
-                <td align="right" valign="bottom" style="white-space:nowrap;">
-                  <p style="margin:0;font-size:11px;color:#cbd5e1;">
-                    NDCI/Sentinel-2 · IFRS Osório
+                    Limiar de eflorescência ≈ 14&nbsp;µg/L (NDCI ≈ 0,10).
                   </p>
                 </td>
               </tr>
