@@ -15,6 +15,8 @@ import {
 import { DataTable } from './table.js';
 import { initChartActions } from './chart-actions.js';
 import { initMap } from './map.js';
+import { initAnalytics, loadAnalytics } from './analytics.js';
+import { exportHTML } from './export-html.js';
 
 let charts      = {};
 const table     = new DataTable();
@@ -126,10 +128,14 @@ function initTabs() {
         tab === 'table' ? 'flex' : 'none';
       document.getElementById('tab-map').style.display =
         tab === 'map' ? 'flex' : 'none';
+      document.getElementById('tab-analytics').style.display =
+        tab === 'analytics' ? 'flex' : 'none';
 
       if (tab === 'map') {
-        // initMap é idempotente: na primeira chamada inicializa, nas seguintes apenas invalida o size
         await initMap();
+      }
+      if (tab === 'analytics') {
+        await loadAnalytics();
       }
     });
   });
@@ -165,6 +171,7 @@ async function loadData() {
     initChartActions();
     table.load(allData);
     updateLagoaTag(activeLagoa);
+    initAnalytics(lagoas);
     showLoading(false);
   } catch (err) {
     showLoading(false);
@@ -301,6 +308,7 @@ function showEmpty() {
 document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('lagoa-select')?.addEventListener('change', onLagoaChange);
   document.getElementById('reload-btn')?.addEventListener('click', loadData);
+  document.getElementById('export-html-btn')?.addEventListener('click', exportHTML);
 
   const onDateFilterChange = async () => {
     destroyChart('series');

@@ -21,6 +21,14 @@
   </div>
   <div class="header-right">
     <span id="db-status">carregando…</span>
+    <button id="export-html-btn" class="btn" title="Exportar página como HTML autossuficiente">
+      <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <line x1="8" y1="2" x2="8" y2="11"/>
+        <polyline points="4,8 8,12 12,8"/>
+        <line x1="2" y1="14" x2="14" y2="14"/>
+      </svg>
+      Exportar HTML
+    </button>
     <button id="reload-btn" class="btn" title="Recarregar dados">↺ Atualizar</button>
   </div>
 </header>
@@ -52,6 +60,12 @@
         <path d="M15.817.113A.5.5 0 0 1 16 .5v14a.5.5 0 0 1-.402.49l-5 1a.5.5 0 0 1-.196 0L5.5 15.01l-4.902.98A.5.5 0 0 1 0 15.5v-14a.5.5 0 0 1 .402-.49l5-1a.5.5 0 0 1 .196 0L10.5.99l4.902-.98a.5.5 0 0 1 .415.103M10 1.91l-4-.8v12.98l4 .8zm1 12.98 4-.8V1.11l-4 .8zm-6-.8V1.11l-4 .8v12.98z"/>
       </svg>
       Mapa
+    </button>
+    <button class="tab-btn" data-tab="analytics">
+      <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+        <path d="M0 0h1v16H0zm15 5H6V4h9zm0 3H6V7h9zm0 3H6v-1h9zM4 5H1V4h3zm0 3H1V7h3zm0 3H1v-1h3z"/>
+      </svg>
+      Tendências
     </button>
   </nav>
 
@@ -270,6 +284,53 @@
     </div>
 
   </div><!-- /tab-map -->
+
+  <!-- ── Analytics tab ─────────────────────────────────────────────────────── -->
+  <div id="tab-analytics" class="tab-panel" style="display:none">
+
+    <!-- Controls bar -->
+    <div class="analytics-controls">
+      <select id="analytics-lagoa-select" title="Lagoa"></select>
+      <span id="analytics-status" class="analytics-status-msg"></span>
+    </div>
+
+    <!-- Mann-Kendall cards -->
+    <section class="card">
+      <div class="chart-header">
+        <span class="card-title">Tendências de Longo Prazo — Mann-Kendall Sazonal</span>
+      </div>
+      <p class="analytics-ref">
+        Hirsch et al. (1982) &middot; Sen (1968) &middot; &alpha; = 0.05 &middot; dados mensais 2017–atual
+      </p>
+      <div id="mk-cards" class="mk-cards-grid"></div>
+    </section>
+
+    <!-- CUSUM -->
+    <section class="card">
+      <div class="chart-header">
+        <span class="card-title">Detecção de Quebra de Regime — CUSUM</span>
+        <div class="cusum-header-controls">
+          <select id="cusum-index-select" title="Índice para análise CUSUM"></select>
+          <label class="view-toggle-label" title="Usar imagens individuais (maior resolução temporal)">
+            <input type="checkbox" id="cusum-granularity-toggle" checked />
+            <span class="view-toggle-track"><span class="view-toggle-thumb"></span></span>
+            <span class="view-toggle-text">Por imagem</span>
+          </label>
+        </div>
+      </div>
+      <p class="analytics-ref">
+        Page (1954) &middot; k = 0.5&sigma; &middot; h = 4&sigma; &middot; linha de base: primeiros 24 obs.
+      </p>
+      <div class="chart-wrap" style="height:210px">
+        <canvas id="cusum-series-chart"></canvas>
+      </div>
+      <div class="chart-wrap" style="height:170px; margin-top:4px">
+        <canvas id="cusum-stat-chart"></canvas>
+      </div>
+      <div id="cusum-alarms"></div>
+    </section>
+
+  </div><!-- /tab-analytics -->
 
 </div><!-- /content -->
 

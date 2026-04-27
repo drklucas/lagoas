@@ -105,7 +105,7 @@ open http://localhost:8001
 curl -X POST "http://localhost:8001/api/workers/collect-stats?ano_inicio=2017"
 
 # Apenas um ano específico
-curl -X POST "http://localhost:8001/api/workers/collect-stats?ano_inicio=2024&ano_fim=2024"
+curl -X POST "http://localhost:8001/api/workers/collect-stats?ano_inicio=2026&ano_fim=2026"
 
 # Forçar re-processamento (sobrescreve registros existentes)
 curl -X POST "http://localhost:8001/api/workers/collect-stats?force=true"

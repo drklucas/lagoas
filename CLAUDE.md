@@ -215,3 +215,16 @@ Classificação via `core/index_registry.py → classify("ndci", value)`.
 1. `core/index_registry.py` → adicionar em `INDICES`
 2. `ingestion/sentinel2/band_math.py` → adicionar cálculo da banda
 3. Workers iteram sobre `INDICES` por domínio — automático
+
+## Regras de Terminal e Leitura de Arquivos (Uso Obrigatório do RTK)
+
+Para economizar tokens de contexto, este projeto utiliza o RTK (Rust Token Killer). O RTK intercepta comandos de terminal (Bash) e otimiza a saída. Para que isso funcione, você DEVE seguir estas regras:
+
+1. **NUNCA** use as suas ferramentas embutidas nativas como `Read`, `Grep` ou `Glob`.
+2. **SEMPRE** use a ferramenta `Bash` (terminal) para ler arquivos, buscar textos ou listar diretórios.
+3. Use os seguintes comandos explicitamente no terminal:
+   - Para ler arquivos: use `rtk read <nome_do_arquivo>`
+   - Para buscar texto (grep): use `rtk grep "padrao" .`
+   - Para listar ou buscar arquivos: use `rtk ls` ou `rtk find "*.ext" .`
+
+Aja como se as ferramentas nativas de leitura e busca não existissem e dependa 100% do terminal (Bash).

@@ -64,6 +64,16 @@ body {
 }
 .header-right { display: flex; align-items: center; gap: 10px; }
 
+#export-html-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: .75rem;
+  padding: 5px 12px;
+  color: var(--muted);
+}
+#export-html-btn:hover { color: var(--text); border-color: var(--accent); }
+
 #db-status {
   font-size: .72rem;
   color: var(--muted);
@@ -968,4 +978,222 @@ tbody td.null { color: var(--muted); }
 @media (max-width: 480px) {
   .kpi-grid { grid-template-columns: 1fr; }
   .table-filters { padding: 10px; gap: 6px; }
+}
+
+/* ── Aba Tendências (Analytics) ───────────────────────────────────────────── */
+
+.analytics-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0 4px;
+  flex-wrap: wrap;
+}
+
+.analytics-status-msg {
+  font-size: .72rem;
+  color: var(--muted);
+  font-style: italic;
+}
+
+.analytics-ref {
+  font-size: .68rem;
+  color: var(--muted);
+  margin: 4px 0 14px;
+  font-style: italic;
+  letter-spacing: .01em;
+}
+
+.analytics-empty {
+  color: var(--muted);
+  font-size: .82rem;
+  padding: 16px 0;
+}
+
+/* Mann-Kendall cards grid */
+.mk-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+  margin-top: 4px;
+}
+
+.mk-card {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition: border-color .15s;
+}
+.mk-card:hover { border-color: var(--border2); }
+
+.mk-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.mk-index-label {
+  font-size: .8rem;
+  font-weight: 600;
+  color: var(--text2);
+}
+
+/* Trend direction badge */
+.trend-badge {
+  font-size: .68rem;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 20px;
+  border: 1px solid;
+  white-space: nowrap;
+  letter-spacing: .03em;
+}
+.trend-up {
+  color: var(--elevado);
+  border-color: rgba(248,81,73,.35);
+  background: rgba(248,81,73,.08);
+}
+.trend-down {
+  color: var(--bom);
+  border-color: rgba(63,185,80,.35);
+  background: rgba(63,185,80,.08);
+}
+.trend-neutral {
+  color: var(--muted);
+  border-color: var(--border);
+  background: var(--surface3);
+}
+
+/* Stats row */
+.mk-stats-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.sig-badge {
+  font-size: .66rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 20px;
+  border: 1px solid;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.sig-yes {
+  color: var(--elevado);
+  border-color: rgba(248,81,73,.4);
+  background: rgba(248,81,73,.08);
+}
+.sig-no {
+  color: var(--muted);
+  border-color: var(--border);
+  background: transparent;
+}
+
+.mk-stat {
+  font-size: .73rem;
+  color: var(--text2);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.mk-stat-muted { color: var(--muted); }
+
+/* Meta row */
+.mk-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.mk-meta {
+  font-size: .67rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.mk-warn {
+  color: var(--moderado);
+}
+
+/* CUSUM header controls */
+.cusum-header-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* CUSUM params line */
+.cusum-params-line {
+  font-size: .68rem;
+  color: var(--muted);
+  margin: 10px 0 6px;
+  font-variant-numeric: tabular-nums;
+}
+
+.cusum-no-alarm {
+  font-size: .78rem;
+  color: var(--bom);
+  padding: 8px 0 4px;
+}
+
+/* CUSUM alarm list */
+.cusum-alarm-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.cusum-alarm-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid;
+}
+.cusum-alarm-elevacao {
+  background: rgba(248,81,73,.06);
+  border-color: rgba(248,81,73,.25);
+}
+.cusum-alarm-queda {
+  background: rgba(63,185,80,.06);
+  border-color: rgba(63,185,80,.25);
+}
+
+.alarm-icon {
+  font-size: 1rem;
+  line-height: 1.4;
+  flex-shrink: 0;
+}
+.cusum-alarm-elevacao .alarm-icon { color: var(--elevado); }
+.cusum-alarm-queda    .alarm-icon { color: var(--bom); }
+
+.alarm-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.alarm-tipo {
+  font-size: .78rem;
+  font-weight: 600;
+  color: var(--text2);
+}
+.alarm-detail,
+.alarm-shift {
+  font-size: .72rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.alarm-detail strong { color: var(--text2); font-weight: 500; }
+
+@media (max-width: 768px) {
+  .mk-cards-grid { grid-template-columns: 1fr; }
+  .cusum-header-controls { flex-wrap: wrap; }
 }

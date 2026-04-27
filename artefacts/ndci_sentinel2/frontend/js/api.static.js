@@ -55,3 +55,8 @@ export const getWorkerStatus = async () => {
 /** Tiles não disponíveis em modo estático (requer proxy GEE). */
 export const getTileAvailability = async () => { throw new Error('static'); };
 export const getTileLagoa        = async () => { throw new Error('static'); };
+
+/** Análises estatísticas não disponíveis em modo estático (requer API). */
+export const getAnalyticsTrend       = async () => { throw new Error('static'); };
+export const getAnalyticsChangepoint = async () => { throw new Error('static'); };
+export const getAnalyticsSummary     = async () => { throw new Error('static'); };
