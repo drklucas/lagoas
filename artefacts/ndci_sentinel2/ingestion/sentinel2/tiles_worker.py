@@ -9,10 +9,10 @@ preservando eventos de curta duração (bloom de cianobactérias, etc.).
 
 Pipeline por imagem:
   1. Filtra S2_SR_HARMONIZED para a data exata (filterDate de 1 dia)
-  2. Aplica máscara SCL (remove nuvens)
+  2. Aplica máscara SCL adaptativa (permissiva dentro da lagoa, completa fora)
   3. Calcula NDCI, NDTI, NDWI
   4. Mosaic (combina tiles S2 do mesmo dia que cobrem a lagoa)
-  5. Aplica máscara de água (NDWI > -0.1) → pixels de terra ficam transparentes
+  5. Aplica máscara de água (NDWI > -0.5) → pixels de terra ficam transparentes
   6. getMapId() com vis_params → tile_url + map_id → salvo no banco
 """
 
@@ -25,7 +25,7 @@ from datetime import datetime, timedelta
 from config import ACTIVE_LAGOAS, LAGOAS, SENTINEL2_START_YEAR, TILE_TTL_HOURS
 from core.index_registry import INDICES
 from ingestion.gee_auth import init_ee, extract_tile_url
-from ingestion.sentinel2.cloud_mask import cloud_mask_s2
+from ingestion.sentinel2.cloud_mask import cloud_mask_s2_water
 from ingestion.sentinel2.band_math import add_water_indices, water_mask
 from storage.database import SessionLocal
 from storage.models import ImageRecord
@@ -35,6 +35,13 @@ logger = logging.getLogger(__name__)
 
 # Índices gerados por este worker (apenas domínio 'water')
 _WATER_INDICES = [key for key, cfg in INDICES.items() if cfg.domain == "water"]
+
+
+def _make_cloud_fn(geom):
+    """Retorna uma função de máscara SCL adaptativa fechada sobre geom."""
+    def _fn(img):
+        return cloud_mask_s2_water(img, geom)
+    return _fn
 
 
 def _sync_generate_tiles(
@@ -73,13 +80,6 @@ def _sync_generate_tiles(
 
     saved, skipped, errors = 0, 0, []
 
-    # Pré-processa: pipeline base da coleção Sentinel-2 (reutilizado por todas as datas)
-    s2_base = (
-        ee.ImageCollection("COPERNICUS/S2_SR_HARMONIZED")
-        .map(cloud_mask_s2)
-        .map(add_water_indices)
-    )
-
     db   = SessionLocal()
     repo = MapTileRepository(db)
 
@@ -108,20 +108,25 @@ def _sync_generate_tiles(
             len(image_records), len(idx_keys),
         )
 
-        # Pré-computa geometrias por lagoa (objetos ee.Geometry são baratos de criar,
-        # mas evitamos recriar a cada iteração interna)
+        # Pré-computa geometrias e coleções por lagoa (uma vez; filtro de data
+        # ocorre no loop interno)
         geoms: dict[str, tuple] = {}
         for lagoa_name, lagoa_cfg in lagoas_cfg.items():
             geom_raw = ee.Geometry.Polygon([lagoa_cfg["polygon"]])
             buffer_m = lagoa_cfg.get("buffer_negativo_m", 0)
             geom     = geom_raw.buffer(-buffer_m) if buffer_m > 0 else geom_raw
-            geoms[lagoa_name] = (geom_raw, geom, lagoa_cfg["bbox"])
+            s2_lagoa = (
+                ee.ImageCollection("COPERNICUS/S2_SR_HARMONIZED")
+                .map(_make_cloud_fn(geom))
+                .map(add_water_indices)
+            )
+            geoms[lagoa_name] = (geom_raw, geom, lagoa_cfg["bbox"], s2_lagoa)
 
         for img_rec in image_records:
             lagoa_name = img_rec.lagoa
             if lagoa_name not in geoms:
                 continue
-            geom_raw, geom, bounds = geoms[lagoa_name]
+            geom_raw, geom, bounds, s2_lagoa = geoms[lagoa_name]
 
             for idx_key in idx_keys:
                 if idx_key not in INDICES:
@@ -144,7 +149,7 @@ def _sync_generate_tiles(
                     d1 = (img_rec.data + timedelta(days=1)).isoformat()
 
                     daily = (
-                        s2_base
+                        s2_lagoa
                         .filterDate(d0, d1)
                         .filterBounds(geom_raw)
                     )
@@ -157,7 +162,7 @@ def _sync_generate_tiles(
                     # mosaic() combina múltiplos tiles S2 do mesmo dia (diferentes
                     # órbitas ou swaths que cobrem a mesma lagoa)
                     composite = daily.mosaic()
-                    water_img = water_mask(composite).clip(geom)
+                    water_img = water_mask(composite, threshold=-0.5).clip(geom)
 
                     band_name = idx_key.upper()   # "NDCI", "NDTI", "NDWI"
                     map_info  = (

@@ -54,3 +54,33 @@ def cloud_mask_s2(img):
         .And(scl.neq(10))   # cirrus
     )
     return img.updateMask(mask)
+
+
+def cloud_mask_s2_water(img, geom_water):
+    """
+    Máscara SCL espacialmente adaptativa para cenas com corpos d'água.
+
+    Dentro de geom_water: remove apenas SCL=1 (saturado) e SCL=3 (sombra).
+    Pixels de bloom denso classificados como SCL=8/9 são preservados — bloom
+    intenso tem reflectância NIR tão alta que o Sen2Cor os confunde com nuvem.
+
+    Fora de geom_water: aplica a máscara SCL completa (remove 1, 3, 8, 9, 10).
+
+    Projetada para uso em ee.ImageCollection.map() via closure por lagoa.
+    """
+    import ee as _ee
+
+    scl = img.select("SCL")
+
+    mask_water = scl.neq(1).And(scl.neq(3))
+    mask_land  = (
+        scl.neq(1)
+        .And(scl.neq(3))
+        .And(scl.neq(8))
+        .And(scl.neq(9))
+        .And(scl.neq(10))
+    )
+
+    is_water   = _ee.Image.constant(1).clip(geom_water).unmask(0)
+    final_mask = mask_land.where(is_water.eq(1), mask_water)
+    return img.updateMask(final_mask)

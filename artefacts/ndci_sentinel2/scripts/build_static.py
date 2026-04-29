@@ -101,6 +101,33 @@ def build(api: str, out: Path) -> dict:
         except Exception:
             print(f"  {lagoa}: sem serie por imagem (ignorado)")
 
+    _ANALYTICS_INDICES = ['ndci', 'ndti', 'ndwi', 'fai']
+    analytics_trend:       dict[str, dict] = {}
+    analytics_changepoint: dict[str, dict] = {}
+
+    print("\nBuscando analises estatisticas (Mann-Kendall + CUSUM)...")
+    for lagoa in lagoas:
+        slug = slugify(lagoa)
+        enc  = urllib.parse.quote(lagoa)
+
+        try:
+            analytics_trend[lagoa] = fetch(f"{api}/api/analytics/{enc}/trend")
+            print(f"  {lagoa}: trend OK")
+        except Exception as e:
+            print(f"  {lagoa}: trend erro ({e})")
+
+        for idx in _ANALYTICS_INDICES:
+            for use_img in ('true', 'false'):
+                key = f"{slug}/{idx}/{use_img}"
+                url = (
+                    f"{api}/api/analytics/{enc}/changepoint"
+                    f"?index={idx}&use_images={use_img}"
+                )
+                try:
+                    analytics_changepoint[key] = fetch(url)
+                except Exception as e:
+                    print(f"  {lagoa}/{idx}/use_images={use_img}: changepoint erro ({e})")
+
     # 2. Escreve JSONs
     print("\nEscrevendo data/...")
     write_json(out / 'data' / 'water_quality.json', water_quality)
@@ -108,6 +135,15 @@ def build(api: str, out: Path) -> dict:
     for lagoa, series in images.items():
         write_json(out / 'data' / 'images' / f"{slugify(lagoa)}.json", series)
     write_json(out / 'data' / 'slugs.json', {lg: slugify(lg) for lg in lagoas})
+
+    for lagoa, trend in analytics_trend.items():
+        write_json(out / 'data' / 'analytics' / slugify(lagoa) / 'trend.json', trend)
+    for key, cp in analytics_changepoint.items():
+        slug, idx, use_img = key.split('/')
+        write_json(
+            out / 'data' / 'analytics' / slug / f'changepoint-{idx}-{use_img}.json',
+            cp,
+        )
 
     total_records = sum(len(v.get('periodos', [])) for v in water_quality.values())
     meta = {

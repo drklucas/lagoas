@@ -48,7 +48,10 @@
       "Bash(rtk read *)",
       "Bash(rtk wc *)",
       "Bash(rtk curl *)",
-      "Bash(rtk docker *)"
+      "Bash(rtk docker *)",
+      "Bash(rtk ls *)",
+      "Bash(rtk grep *)",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(f'Records: {len\\(d\\)}'\\); print\\('Primeiro:', d[0] if d else 'vazio'\\); print\\('Último:', d[-1] if d else 'vazio'\\)\")"
     ]
   }
 }

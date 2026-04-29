@@ -56,7 +56,32 @@ export const getWorkerStatus = async () => {
 export const getTileAvailability = async () => { throw new Error('static'); };
 export const getTileLagoa        = async () => { throw new Error('static'); };
 
-/** Análises estatísticas não disponíveis em modo estático (requer API). */
-export const getAnalyticsTrend       = async () => { throw new Error('static'); };
-export const getAnalyticsChangepoint = async () => { throw new Error('static'); };
-export const getAnalyticsSummary     = async () => { throw new Error('static'); };
+/**
+ * fetchJSON — compatível com analytics.js que importa esta função diretamente.
+ * Mapeia as rotas de /api/analytics/* para os JSONs pré-gerados em data/analytics/.
+ */
+export async function fetchJSON(path) {
+  if (!_slugs) _slugs = await _load('/slugs.json');
+
+  // /api/analytics/{lagoa}/trend
+  const trendMatch = path.match(/\/api\/analytics\/([^/?]+)\/trend/);
+  if (trendMatch) {
+    const lagoa = decodeURIComponent(trendMatch[1]);
+    const slug  = _slugs[lagoa] ?? lagoa.toLowerCase().replace(/\s+/g, '-');
+    return _load(`/analytics/${slug}/trend.json`);
+  }
+
+  // /api/analytics/{lagoa}/changepoint?index=X&use_images=Y
+  const cpMatch = path.match(/\/api\/analytics\/([^/?]+)\/changepoint/);
+  if (cpMatch) {
+    const lagoa    = decodeURIComponent(cpMatch[1]);
+    const slug     = _slugs[lagoa] ?? lagoa.toLowerCase().replace(/\s+/g, '-');
+    const qs       = path.includes('?') ? path.split('?')[1] : '';
+    const params   = new URLSearchParams(qs);
+    const index    = params.get('index')     ?? 'ndci';
+    const useImg   = params.get('use_images') ?? 'true';
+    return _load(`/analytics/${slug}/changepoint-${index}-${useImg}.json`);
+  }
+
+  throw new Error(`fetchJSON não suportado em modo estático: ${path}`);
+}

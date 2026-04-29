@@ -69,7 +69,7 @@ a `water_mask` pode ainda excluí-los:
 
 ```python
 # band_math.py — water_mask() atual
-# threshold padrão = -0.2 (WATER_MASK_THRESHOLD em config.py)
+# threshold padrão = -0.2 (parâmetro default da função em band_math.py)
 ndwi_mask = composite.select("NDWI").gt(threshold)   # -0.2
 fai_mask  = composite.select("FAI").gt(0)
 return composite.updateMask(ndwi_mask.Or(fai_mask))
