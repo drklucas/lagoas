@@ -8,6 +8,9 @@ Reference:
 Parameters follow environmental monitoring conventions:
   k = 0.5 σ  — reference value (detects shifts ≥ 1σ efficiently)
   h = 4.0 σ  — decision interval (false-alarm rate ≈ 1/370 for Gaussian data)
+
+Baseline estimator: median + MAD×1.4826 (robust to outliers at series start).
+Monitoring phase starts only after the baseline period ends (no circular accumulation).
 """
 
 from __future__ import annotations
@@ -42,6 +45,10 @@ class CUSUMResult:
     cusum_pos: list[float]    # CUSUM⁺ (detects upward shifts)
     cusum_neg: list[float]    # CUSUM⁻ (detects downward shifts)
     n_obs: int
+    # Robust baseline diagnostics
+    aviso_baseline_contaminado: bool = False
+    outliers_baseline: list[dict] = field(default_factory=list)
+    baseline_estimador: str = "mediana/MAD"
     erro: str | None = None
 
 
@@ -63,6 +70,11 @@ def cusum_analysis(
     The estimated start of the shift is the time of the most recent reset
     (i.e., the last time the statistic touched zero before the alarm).
 
+    Baseline parameters are estimated robustly via median and MAD×1.4826,
+    which makes k and h resistant to extreme values at the start of the series.
+    Monitoring (accumulation) begins only after the baseline period ends to
+    avoid circular contamination.
+
     Args:
         values:      Time series (None / NaN = missing, kept in output series).
         periodos:    Period labels aligned with values.
@@ -72,7 +84,7 @@ def cusum_analysis(
         h_fator:     h = h_fator × σ₀  (default 4.0).
 
     Returns:
-        CUSUMResult with alarm list and full CUSUM series for plotting.
+        CUSUMResult with alarm list, full CUSUM series, and baseline diagnostics.
     """
     valid_idx_val = [
         (i, float(v))
@@ -105,24 +117,47 @@ def cusum_analysis(
         baseline_n = max(5, min(24, int(n_valid * 0.30)))
     baseline_n = min(baseline_n, n_valid - 3)
 
-    baseline_vals = [v for _, v in valid_idx_val[:baseline_n]]
-    mu0   = float(np.mean(baseline_vals))
-    sigma = float(np.std(baseline_vals, ddof=1))
+    baseline_pairs = valid_idx_val[:baseline_n]
+    baseline_arr   = np.array([v for _, v in baseline_pairs])
+
+    # ── Robust baseline estimator: median + MAD×1.4826 ───────────────────────
+    # 1.4826 = 1/Φ⁻¹(0.75) — makes MAD a consistent estimator of σ (Hampel, 1974)
+    mu0 = float(np.median(baseline_arr))
+    mad = float(np.median(np.abs(baseline_arr - mu0)))
+    sigma = mad * 1.4826
     if sigma < 1e-10:
         sigma = max(1e-4, abs(mu0) * 0.01)
 
     k = k_fator * sigma
     h = h_fator * sigma
 
-    bl_start = periodos[valid_idx_val[0][0]]
-    bl_end   = periodos[valid_idx_val[baseline_n - 1][0]]
+    bl_start = periodos[baseline_pairs[0][0]]
+    bl_end   = periodos[baseline_pairs[-1][0]]
     periodo_baseline = f"{bl_start} a {bl_end}"
 
-    # ── Run CUSUM ─────────────────────────────────────────────────────────────
+    # ── Baseline contamination check (modified z-score, Iglewicz & Hoaglin 1993)
+    # M_i = 0.6745 × |x_i − median| / MAD; flag if |M_i| > 3.5
+    outliers_baseline: list[dict] = []
+    if mad > 1e-10:
+        for orig_idx, v in baseline_pairs:
+            m_i = 0.6745 * abs(v - mu0) / mad
+            if m_i > 3.5:
+                outliers_baseline.append({
+                    "periodo": periodos[orig_idx],
+                    "valor":   round(v, 6),
+                    "z_mod":   round(m_i, 2),
+                })
+
+    # Index in the original `values` array of the last baseline observation
+    last_baseline_idx = baseline_pairs[-1][0]
+
+    # ── Run CUSUM — monitoring starts after baseline ──────────────────────────
     cp_pos = 0.0
     cp_neg = 0.0
-    last_reset_pos = 0   # index of last C⁺ reset (for shift-start estimation)
-    last_reset_neg = 0
+    # Initialise reset markers at last baseline position so shift-start
+    # estimates correctly anchor to the start of the monitoring window.
+    last_reset_pos: int = last_baseline_idx
+    last_reset_neg: int = last_baseline_idx
     in_alarm_pos = False
     in_alarm_neg = False
 
@@ -131,6 +166,12 @@ def cusum_analysis(
     alarmes: list[CUSUMAlarm] = []
 
     for i, v in enumerate(values):
+        # Baseline period — output zero, no accumulation
+        if i <= last_baseline_idx:
+            cusum_pos.append(0.0)
+            cusum_neg.append(0.0)
+            continue
+
         if v is None or (isinstance(v, float) and math.isnan(v)):
             cusum_pos.append(round(cp_pos, 8))
             cusum_neg.append(round(cp_neg, 8))
@@ -140,7 +181,7 @@ def cusum_analysis(
         cp_pos = max(0.0, cp_pos + (fv - mu0) - k)
         cp_neg = max(0.0, cp_neg - (fv - mu0) - k)
 
-        # Track resets (C returns to zero → shift ended / new baseline)
+        # Track resets (C returns to zero → shift ended / new baseline phase)
         if cp_pos == 0.0:
             last_reset_pos = i
             in_alarm_pos = False
@@ -191,5 +232,8 @@ def cusum_analysis(
         cusum_pos=cusum_pos,
         cusum_neg=cusum_neg,
         n_obs=n_valid,
+        aviso_baseline_contaminado=len(outliers_baseline) > 0,
+        outliers_baseline=outliers_baseline,
+        baseline_estimador="mediana/MAD",
         erro=None,
     )

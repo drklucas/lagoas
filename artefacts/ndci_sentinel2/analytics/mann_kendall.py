@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import math
 from collections import Counter, defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 
@@ -34,6 +34,9 @@ class MKResult:
     periodo_inicio: str       # "YYYY-MM"
     periodo_fim: str          # "YYYY-MM"
     alpha: float
+    n_outliers_removidos: int = 0
+    outliers: list[dict] = field(default_factory=list)
+    avisos: list[str] = field(default_factory=list)
     erro: str | None = None
 
 
@@ -43,6 +46,61 @@ def _sgn(x: float) -> int:
     if x < 0:
         return -1
     return 0
+
+
+_MONTH_NAMES = {
+    1: "jan", 2: "fev", 3: "mar", 4: "abr", 5: "mai", 6: "jun",
+    7: "jul", 8: "ago", 9: "set", 10: "out", 11: "nov", 12: "dez",
+}
+
+
+def _seasonal_outlier_filter(
+    yvpairs: list[tuple[int, float]],
+    z_threshold: float = 3.5,
+) -> tuple[list[tuple[int, float]], list[tuple[int, float, float]]]:
+    """
+    Remove start-of-series initialization outliers using the modified z-score
+    (Iglewicz & Hoaglin, 1993):
+
+        M_i = 0.6745 × |x_i − median(x)| / MAD(x)
+
+    The filter is intentionally narrow: it only flags observations from the
+    FIRST calendar year in the season (yvpairs is sorted by year).  This
+    targets the known bias where an anomalous value at the very beginning of
+    the Sentinel-2 archive (e.g., Jul/Aug 2017) dominates the S statistic for
+    that season while leaving legitimate bloom events in later years untouched.
+
+    Only applied when n ≥ 5 (need reliable MAD estimate).
+    Always keeps at least 3 observations per season.
+
+    Returns (filtered_pairs, [(year, value, z_score), ...] of removed obs).
+    """
+    if len(yvpairs) < 5:
+        return yvpairs, []
+
+    vals = np.array([v for _, v in yvpairs])
+    median = float(np.median(vals))
+    mad = float(np.median(np.abs(vals - median)))
+
+    if mad < 1e-10:
+        return yvpairs, []
+
+    # Only candidates from the first year of data in this season
+    first_year = yvpairs[0][0]
+
+    filtered: list[tuple[int, float]] = []
+    removed:  list[tuple[int, float, float]] = []
+    for y, v in yvpairs:
+        m_i = 0.6745 * abs(v - median) / mad
+        if y == first_year and m_i > z_threshold:
+            removed.append((y, v, round(m_i, 2)))
+        else:
+            filtered.append((y, v))
+
+    if len(filtered) < 3:
+        return yvpairs, []
+
+    return filtered, removed
 
 
 def _var_s_season(n: int, vals: list[float]) -> float:
@@ -116,8 +174,17 @@ def seasonal_mann_kendall(
     VarS_total = 0.0
     all_slopes: list[float] = []   # Sen's slope candidates (units/year)
     n_seasons_valid = 0
+    all_outliers: list[dict] = []
 
     for m, yvpairs in seasons.items():
+        # Per-season outlier filter before computing S
+        yvpairs, removed = _seasonal_outlier_filter(yvpairs)
+        for y_r, v_r, z_r in removed:
+            all_outliers.append({
+                "mes": m, "ano": y_r,
+                "valor": round(v_r, 6), "z_mod": z_r,
+            })
+
         n_s = len(yvpairs)
         if n_s < 2:
             continue
@@ -178,6 +245,19 @@ def seasonal_mann_kendall(
     inicio = f"{all_sorted[0][0]}-{all_sorted[0][1]:02d}"
     fim    = f"{all_sorted[-1][0]}-{all_sorted[-1][1]:02d}"
 
+    avisos: list[str] = []
+    if all_outliers:
+        by_mes: dict[int, list[dict]] = defaultdict(list)
+        for o in all_outliers:
+            by_mes[o["mes"]].append(o)
+        for mes, obs in sorted(by_mes.items()):
+            detalhes = ", ".join(
+                f"{o['ano']} ({o['valor']:+.4f}, z={o['z_mod']})" for o in obs
+            )
+            avisos.append(
+                f"{_MONTH_NAMES[mes].capitalize()}: {len(obs)} obs removida(s) — {detalhes}"
+            )
+
     return MKResult(
         trend=trend,
         significativo=sig,
@@ -192,5 +272,8 @@ def seasonal_mann_kendall(
         periodo_inicio=inicio,
         periodo_fim=fim,
         alpha=alpha,
+        n_outliers_removidos=len(all_outliers),
+        outliers=all_outliers,
+        avisos=avisos,
         erro=None,
     )
