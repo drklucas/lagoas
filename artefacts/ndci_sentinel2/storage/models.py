@@ -1,11 +1,13 @@
 """
 Modelos SQLAlchemy standalone para o sistema NDCI/Sentinel-2.
 
-Quatro modelos:
-  - ImageRecord         → estatísticas por imagem individual (fonte primária)
+Seis modelos:
+  - ImageRecord         → estatísticas por imagem individual (fonte primária, água)
   - WaterQualityRecord  → agregados mensais derivados dos ImageRecords (ML + API legado)
   - MapTileRecord       → URLs de tiles XYZ para visualização no mapa
   - ReportLogRecord     → log de idempotência para relatórios enviados por e-mail
+  - NdviRecord          → NDVI por imagem individual no anel de vegetação terrestre
+  - NdviMonthlyRecord   → agregados mensais de NDVI derivados de NdviRecord
 
 A granularidade por imagem (ImageRecord) foi adicionada para reproduzir a
 metodologia de Pi & Guasselli (SBSR 2025), que captura imagens individuais
@@ -49,6 +51,7 @@ class ImageRecord(Base):
     id          = Column(Integer,      primary_key=True, autoincrement=True)
     satellite   = Column(String(50),   nullable=False, index=True)
     lagoa       = Column(String(100),  nullable=False, index=True)
+    zona        = Column(String(50),   nullable=False, server_default="total")  # "total" | "margem" | "medio" | "nucleo"
     data        = Column(Date,         nullable=False)          # data da imagem
     ano         = Column(SmallInteger, nullable=False)          # derivado de data
     mes         = Column(SmallInteger, nullable=False)          # derivado de data
@@ -67,9 +70,10 @@ class ImageRecord(Base):
     created_at  = Column(DateTime, default=datetime.utcnow)
 
     __table_args__ = (
-        UniqueConstraint("satellite", "lagoa", "data", name="uq_image_record"),
+        UniqueConstraint("satellite", "lagoa", "data", "zona", name="uq_image_record"),
         Index("ix_ir_lagoa_data",    "lagoa", "data"),
         Index("ix_ir_lagoa_periodo", "lagoa", "ano", "mes"),
+        Index("ix_ir_lagoa_zona",    "lagoa", "zona"),
     )
 
     def __repr__(self) -> str:
@@ -103,6 +107,7 @@ class WaterQualityRecord(Base):
     id          = Column(Integer,      primary_key=True, autoincrement=True)
     satellite   = Column(String(50),   nullable=False, index=True)   # ex: "sentinel2"
     lagoa       = Column(String(100),  nullable=False, index=True)
+    zona        = Column(String(50),   nullable=False, server_default="total")  # "total" | "margem" | "medio" | "nucleo"
     ano         = Column(SmallInteger, nullable=False)
     mes         = Column(SmallInteger, nullable=False)               # 1..12
 
@@ -117,8 +122,9 @@ class WaterQualityRecord(Base):
     collected_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
     __table_args__ = (
-        UniqueConstraint("satellite", "lagoa", "ano", "mes", name="uq_water_quality"),
+        UniqueConstraint("satellite", "lagoa", "ano", "mes", "zona", name="uq_water_quality"),
         Index("ix_wq_lagoa_periodo", "lagoa", "ano", "mes"),
+        Index("ix_wq_lagoa_zona",    "lagoa", "zona"),
     )
 
     def __repr__(self) -> str:
@@ -222,3 +228,106 @@ class ReportLogRecord(Base):
 
     def __repr__(self) -> str:
         return f"<ReportLogRecord {self.report_period} status={self.status}>"
+
+
+class NdviRecord(Base):
+    """
+    NDVI por imagem individual no anel de vegetação terrestre (fora da lagoa).
+
+    A geometria de análise é um anel anular definido por veg_inner_m e
+    veg_outer_m no config.py — inicia veg_inner_m metros para fora do
+    polígono da lagoa, garantindo ausência de FAI e pixels mistos de borda.
+
+    Máscara de terra: NDWI < 0 (exclui água residual intra-anel).
+    """
+
+    __tablename__ = "ndvi_vegetation_records"
+
+    id          = Column(Integer,      primary_key=True, autoincrement=True)
+    satellite   = Column(String(50),   nullable=False, index=True)
+    lagoa       = Column(String(100),  nullable=False, index=True)
+    data        = Column(Date,         nullable=False)
+    ano         = Column(SmallInteger, nullable=False)
+    mes         = Column(SmallInteger, nullable=False)
+
+    ndvi_mean   = Column(Float, nullable=True)
+    ndvi_p90    = Column(Float, nullable=True)
+    ndvi_p10    = Column(Float, nullable=True)
+    n_pixels    = Column(Integer, nullable=True)
+    cloud_pct   = Column(Float,   nullable=True)
+
+    created_at  = Column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("satellite", "lagoa", "data", name="uq_ndvi_record"),
+        Index("ix_ndvi_lagoa_data",    "lagoa", "data"),
+        Index("ix_ndvi_lagoa_periodo", "lagoa", "ano", "mes"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<NdviRecord {self.lagoa} {self.data} ndvi={self.ndvi_mean}>"
+
+
+class NdviMonthlyRecord(Base):
+    """
+    Agregados mensais de NDVI derivados de NdviRecord via GROUP BY.
+
+    Alimenta a série temporal no frontend e a análise de tendências de
+    cobertura vegetal no entorno das lagoas.
+    """
+
+    __tablename__ = "ndvi_vegetation_monthly"
+
+    id           = Column(Integer,      primary_key=True, autoincrement=True)
+    satellite    = Column(String(50),   nullable=False, index=True)
+    lagoa        = Column(String(100),  nullable=False, index=True)
+    ano          = Column(SmallInteger, nullable=False)
+    mes          = Column(SmallInteger, nullable=False)
+
+    ndvi_mean    = Column(Float,   nullable=True)
+    ndvi_p90     = Column(Float,   nullable=True)
+    ndvi_p10     = Column(Float,   nullable=True)
+    n_pixels     = Column(Integer, nullable=True)
+
+    collected_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("satellite", "lagoa", "ano", "mes", name="uq_ndvi_monthly"),
+        Index("ix_ndvi_monthly_lagoa", "lagoa", "ano", "mes"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<NdviMonthlyRecord {self.lagoa} {self.ano}-{self.mes:02d} ndvi={self.ndvi_mean}>"
+
+
+class GeoRegion(Base):
+    """
+    Região geográfica desenhada no frontend para análise espacial.
+
+    Quando `lagoa` está preenchido, o stats_worker inclui a região no
+    processamento daquela lagoa (zona nomeada = `nome`).
+    Quando `lagoa` é NULL, a região é uma área livre para uso futuro.
+
+    `polygon` armazena [[lon, lat], ...] na ordem do GEE (longitude primeiro).
+    """
+
+    __tablename__ = "geo_regions"
+
+    id            = Column(Integer,     primary_key=True, autoincrement=True)
+    nome          = Column(String(100), nullable=False)
+    descricao     = Column(String,      nullable=True)
+    polygon       = Column(JSON,        nullable=False)   # [[lon, lat], ...]
+    lagoa         = Column(String(100), nullable=True,  index=True)
+    categoria     = Column(String(50),  nullable=False, server_default="setor_lagoa")
+    ativo         = Column(Integer,     nullable=False, server_default="1")  # 1=True, SQLite compat
+    min_pixels    = Column(Integer,     nullable=True)   # None → usa _MIN_VALID_PIXELS_ZONA
+    criado_em     = Column(DateTime,    nullable=False, default=datetime.utcnow)
+    atualizado_em = Column(DateTime,    nullable=False, default=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("nome", "lagoa", name="uq_geo_region"),
+        Index("ix_geo_regions_ativo", "ativo"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<GeoRegion {self.lagoa}/{self.nome} ativo={self.ativo}>"

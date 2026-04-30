@@ -6,6 +6,7 @@
  */
 
 import { getTileAvailability, getTileLagoa } from './api.js';
+import { initRegions } from './regions.js';
 
 // Estado interno
 let _map       = null;
@@ -35,6 +36,9 @@ export async function initMap() {
     maxZoom: 18,
     opacity: 0.55,
   }).addTo(_map);
+
+  // ── Regiões desenhadas (painel lateral) ──
+  initRegions(_map);
 
   // ── Carrega disponibilidade de tiles ──
   try {

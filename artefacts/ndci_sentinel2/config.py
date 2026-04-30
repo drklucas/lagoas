@@ -82,6 +82,12 @@ LAGOAS: dict[str, dict] = {
         "bbox": [-50.249, -29.883, -50.23, -29.857],
         "municipio": 4313508,   # Osório
         "buffer_negativo_m": 30,   # lago pequeno (~2.1 km²): 30 m = 1.5 px @20m remove pixel misto sem sacrificar área
+        "veg_inner_m": 100,        # anel de vegetação terrestre: 100 m da beira (exclui FAI/ripária)
+        "veg_outer_m": 400,        # anel de vegetação terrestre: limite externo
+        "zonas": [
+            {"nome": "margem", "buffer_ext": 0,  "buffer_int": 30},
+            {"nome": "nucleo", "buffer_ext": 30, "buffer_int": None},
+        ],
     },
     "Lagoa dos Barros": {
         # fonte: hydrolakes | 132 vértices
@@ -222,6 +228,13 @@ LAGOAS: dict[str, dict] = {
         "bbox": [-50.427, -29.991, -50.32, -29.868],
         "municipio": 4313508,   # Osório
         "buffer_negativo_m": 300,
+        "veg_inner_m": 400,
+        "veg_outer_m": 1500,
+        "zonas": [
+            {"nome": "margem", "buffer_ext": 0,   "buffer_int": 300},
+            {"nome": "medio",  "buffer_ext": 300, "buffer_int": 700},
+            {"nome": "nucleo", "buffer_ext": 700, "buffer_int": None},
+        ],
     },
     "Lagoa de Tramandaí": {
         # fonte: gsw | 110 vértices
@@ -340,6 +353,13 @@ LAGOAS: dict[str, dict] = {
         "bbox": [-50.111, -30.029, -49.989, -29.921],
         "municipio": 4321600,   # Tramandaí
         "buffer_negativo_m": 150,
+        "veg_inner_m": 200,
+        "veg_outer_m": 700,
+        "zonas": [
+            {"nome": "margem", "buffer_ext": 0,   "buffer_int": 150},
+            {"nome": "medio",  "buffer_ext": 150, "buffer_int": 400},
+            {"nome": "nucleo", "buffer_ext": 400, "buffer_int": None},
+        ],
     },
     "Lagoa do Armazém": {
         # fonte: hydrolakes | 158 vértices
@@ -506,6 +526,13 @@ LAGOAS: dict[str, dict] = {
         "bbox": [-50.182, -30.004, -50.134, -29.943],
         "municipio": 4321600,   # Tramandaí
         "buffer_negativo_m": 100,
+        "veg_inner_m": 150,
+        "veg_outer_m": 600,
+        "zonas": [
+            {"nome": "margem", "buffer_ext": 0,   "buffer_int": 100},
+            {"nome": "medio",  "buffer_ext": 100, "buffer_int": 300},
+            {"nome": "nucleo", "buffer_ext": 300, "buffer_int": None},
+        ],
     },
     "Lagoa Itapeva": {
         # fonte: hydrolakes | 413 vértices
@@ -927,6 +954,13 @@ LAGOAS: dict[str, dict] = {
         "bbox": [-50.031, -29.601, -49.792, -29.373],
         "municipio": 4313508,   # Osório
         "buffer_negativo_m": 200,
+        "veg_inner_m": 300,
+        "veg_outer_m": 1000,
+        "zonas": [
+            {"nome": "margem", "buffer_ext": 0,   "buffer_int": 200},
+            {"nome": "medio",  "buffer_ext": 200, "buffer_int": 600},
+            {"nome": "nucleo", "buffer_ext": 600, "buffer_int": None},
+        ],
     },
     "Lagoa Caconde": {
         # fonte: hydrolakes | 46 vértices
@@ -981,6 +1015,12 @@ LAGOAS: dict[str, dict] = {
         "bbox": [-50.222, -29.877, -50.194, -29.86],
         "municipio": 4313508,   # Osório
         "buffer_negativo_m": 50,
+        "veg_inner_m": 100,
+        "veg_outer_m": 400,
+        "zonas": [
+            {"nome": "margem", "buffer_ext": 0,  "buffer_int": 50},
+            {"nome": "nucleo", "buffer_ext": 50, "buffer_int": None},
+        ],
     },
 }
 

@@ -101,6 +101,17 @@ def build(api: str, out: Path) -> dict:
         except Exception:
             print(f"  {lagoa}: sem serie por imagem (ignorado)")
 
+    zones: dict[str, dict] = {}
+    print("\nBuscando series por zona espacial...")
+    for lagoa in lagoas:
+        url = f"{api}/api/water-quality/{urllib.parse.quote(lagoa)}/zones"
+        try:
+            zones[lagoa] = fetch(url)
+            n_zonas = len(zones[lagoa].get('zonas', {}))
+            print(f"  {lagoa}: {n_zonas} zonas")
+        except Exception:
+            print(f"  {lagoa}: sem dados por zona (ignorado)")
+
     _ANALYTICS_INDICES = ['ndci', 'ndti', 'ndwi', 'fai']
     analytics_trend:       dict[str, dict] = {}
     analytics_changepoint: dict[str, dict] = {}
@@ -134,6 +145,8 @@ def build(api: str, out: Path) -> dict:
     write_json(out / 'data' / 'current.json', current)
     for lagoa, series in images.items():
         write_json(out / 'data' / 'images' / f"{slugify(lagoa)}.json", series)
+    for lagoa, zseries in zones.items():
+        write_json(out / 'data' / 'zones' / f"{slugify(lagoa)}.json", zseries)
     write_json(out / 'data' / 'slugs.json', {lg: slugify(lg) for lg in lagoas})
 
     for lagoa, trend in analytics_trend.items():

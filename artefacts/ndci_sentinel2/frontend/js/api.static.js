@@ -28,6 +28,12 @@ export const getImageSeries = async (lagoa) => {
   return _load(`/images/${slug}.json`);
 };
 
+/** { lagoa, satellite, zonas: { margem: {...}, medio: {...}, nucleo: {...} } } */
+export const getZoneSeries = async (lagoa) => {
+  const slug = await _getSlug(lagoa);
+  return _load(`/zones/${slug}.json`);
+};
+
 /** { "Lagoa X": { periodo, ndci_mean, status, ... } } */
 export const getCurrentStatus = () => _load('/current.json');
 
@@ -55,6 +61,17 @@ export const getWorkerStatus = async () => {
 /** Tiles não disponíveis em modo estático (requer proxy GEE). */
 export const getTileAvailability = async () => { throw new Error('static'); };
 export const getTileLagoa        = async () => { throw new Error('static'); };
+
+/** { "Lagoa X": { periodos, ndvi_mean, ndvi_p90, ndvi_p10, n_pixels } } */
+export const getVegetation = async () => {
+  try { return await _load('/vegetation.json'); } catch { return {}; }
+};
+
+/** { lagoa, datas, ndvi_mean, ... } */
+export const getVegetationImages = async (lagoa) => {
+  const slug = await _getSlug(lagoa);
+  return _load(`/vegetation/${slug}.json`);
+};
 
 /**
  * fetchJSON — compatível com analytics.js que importa esta função diretamente.

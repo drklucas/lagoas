@@ -4,6 +4,8 @@ from .predictions import router as predictions_router
 from .workers import router as workers_router
 from .notifications import router as notifications_router
 from .analytics import router as analytics_router
+from .vegetation import router as vegetation_router
+from .regions import router as regions_router
 
 __all__ = [
     "water_quality_router",
@@ -12,4 +14,6 @@ __all__ = [
     "workers_router",
     "notifications_router",
     "analytics_router",
+    "vegetation_router",
+    "regions_router",
 ]

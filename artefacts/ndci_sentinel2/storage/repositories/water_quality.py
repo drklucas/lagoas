@@ -32,11 +32,12 @@ class WaterQualityRepository:
         fai_mean: float | None,
         ndwi_mean: float | None,
         n_pixels: int | None,
+        zona: str = "total",
     ) -> WaterQualityRecord:
         """Insere ou atualiza um registro de qualidade da água."""
         rec = (
             self._db.query(WaterQualityRecord)
-            .filter_by(satellite=satellite, lagoa=lagoa, ano=ano, mes=mes)
+            .filter_by(satellite=satellite, lagoa=lagoa, ano=ano, mes=mes, zona=zona)
             .first()
         )
         if rec:
@@ -51,6 +52,7 @@ class WaterQualityRepository:
             rec = WaterQualityRecord(
                 satellite=satellite,
                 lagoa=lagoa,
+                zona=zona,
                 ano=ano,
                 mes=mes,
                 ndci_mean=ndci_mean,
@@ -70,11 +72,12 @@ class WaterQualityRepository:
         self,
         lagoa: str,
         satellite: str = "sentinel2",
+        zona: str = "total",
     ) -> list[WaterQualityRecord]:
-        """Retorna toda a série temporal de uma lagoa, ordenada por período."""
+        """Retorna toda a série temporal de uma lagoa para uma zona."""
         return (
             self._db.query(WaterQualityRecord)
-            .filter_by(satellite=satellite, lagoa=lagoa)
+            .filter_by(satellite=satellite, lagoa=lagoa, zona=zona)
             .order_by(WaterQualityRecord.ano, WaterQualityRecord.mes)
             .all()
         )
@@ -82,11 +85,12 @@ class WaterQualityRepository:
     def get_all_series(
         self,
         satellite: str = "sentinel2",
+        zona: str = "total",
     ) -> dict[str, list[WaterQualityRecord]]:
-        """Retorna a série temporal de todas as lagoas."""
+        """Retorna a série temporal de todas as lagoas para uma zona."""
         rows = (
             self._db.query(WaterQualityRecord)
-            .filter_by(satellite=satellite)
+            .filter_by(satellite=satellite, zona=zona)
             .order_by(
                 WaterQualityRecord.lagoa,
                 WaterQualityRecord.ano,
@@ -99,12 +103,34 @@ class WaterQualityRepository:
             result.setdefault(r.lagoa, []).append(r)
         return result
 
+    def get_zones_series(
+        self,
+        lagoa: str,
+        satellite: str = "sentinel2",
+    ) -> dict[str, list[WaterQualityRecord]]:
+        """Retorna séries mensais agrupadas por zona (exclui 'total')."""
+        rows = (
+            self._db.query(WaterQualityRecord)
+            .filter(
+                WaterQualityRecord.satellite == satellite,
+                WaterQualityRecord.lagoa == lagoa,
+                WaterQualityRecord.zona != "total",
+            )
+            .order_by(WaterQualityRecord.zona, WaterQualityRecord.ano, WaterQualityRecord.mes)
+            .all()
+        )
+        result: dict[str, list[WaterQualityRecord]] = {}
+        for r in rows:
+            result.setdefault(r.zona, []).append(r)
+        return result
+
     def get_latest(
         self,
         satellite: str = "sentinel2",
+        zona: str = "total",
     ) -> list[WaterQualityRecord]:
         """
-        Retorna o registro mais recente de cada lagoa.
+        Retorna o registro mais recente de cada lagoa para uma zona.
         Implementado como subquery para evitar N+1.
         """
         from sqlalchemy import func
@@ -114,7 +140,7 @@ class WaterQualityRepository:
                 WaterQualityRecord.lagoa,
                 func.max(WaterQualityRecord.ano * 100 + WaterQualityRecord.mes).label("max_periodo"),
             )
-            .filter_by(satellite=satellite)
+            .filter_by(satellite=satellite, zona=zona)
             .group_by(WaterQualityRecord.lagoa)
             .subquery()
         )
@@ -129,6 +155,10 @@ class WaterQualityRepository:
                     == subq.c.max_periodo
                 ),
             )
+            .filter(
+                WaterQualityRecord.satellite == satellite,
+                WaterQualityRecord.zona == zona,
+            )
             .all()
         )
 
@@ -141,3 +171,17 @@ class WaterQualityRepository:
             .all()
         )
         return sorted(r[0] for r in rows)
+
+    def available_zones(self, satellite: str = "sentinel2") -> list[str]:
+        """Lista de zonas distintas presentes no banco."""
+        rows = (
+            self._db.query(WaterQualityRecord.zona)
+            .filter_by(satellite=satellite)
+            .distinct()
+            .all()
+        )
+        zones = sorted(r[0] for r in rows)
+        # garante que 'total' aparece primeiro
+        if "total" in zones:
+            zones = ["total"] + [z for z in zones if z != "total"]
+        return zones

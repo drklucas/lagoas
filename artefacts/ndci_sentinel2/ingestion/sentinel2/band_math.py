@@ -53,7 +53,9 @@ def add_water_indices(img):
     )
     fai = b8.subtract(nir_baseline).rename("FAI")
 
-    return img.addBands([ndci, ndti, ndwi, fai])
+    ndvi = b8.subtract(b4).divide(b8.add(b4)).rename("NDVI")
+
+    return img.addBands([ndci, ndti, ndwi, fai, ndvi])
 
 
 def water_mask(composite, threshold: float = -0.2):
@@ -74,3 +76,14 @@ def water_mask(composite, threshold: float = -0.2):
     ndwi_mask = composite.select("NDWI").gt(threshold)
     fai_mask  = composite.select("FAI").gt(0)
     return composite.updateMask(ndwi_mask.Or(fai_mask))
+
+
+def land_mask(composite):
+    """
+    Retém apenas pixels de terra (NDWI < 0).
+
+    Usado pelo worker de NDVI para excluir água residual do anel de vegetação.
+    O anel já inicia fora da lagoa (buffer positivo), então a máscara é apenas
+    uma salvaguarda contra canais, banhados e pixels mistos na borda interna.
+    """
+    return composite.updateMask(composite.select("NDWI").lt(0))

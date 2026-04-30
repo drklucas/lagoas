@@ -42,6 +42,7 @@ from ingestion.gee_auth import init_ee
 from ingestion.sentinel2.cloud_mask import cloud_mask_s2
 from ingestion.sentinel2.band_math import add_water_indices, water_mask
 from storage.database import SessionLocal
+from storage.models import GeoRegion
 from storage.repositories.image_records import ImageRecordRepository
 from storage.repositories.water_quality import WaterQualityRepository
 
@@ -67,6 +68,9 @@ _MIN_VALID_PIXELS: dict[str, int] = {
     "Lagoa Caconde":       100,
 }
 _MIN_VALID_PIXELS_DEFAULT: int = 200
+
+# Pixels mínimos para zonas individuais (anéis têm área menor que a lagoa inteira)
+_MIN_VALID_PIXELS_ZONA: int = 30
 
 # Máximo de getInfo() simultâneos ao GEE — limite empírico ~40 por projeto.
 # Mantemos em 8 para deixar margem a outros serviços/usuários do mesmo projeto.
@@ -136,6 +140,71 @@ def _getinfo_with_retry(ee_obj, retries: int = 4, base_backoff: float = 5.0) -> 
                 raise
 
 
+def _build_zone_geometries(geom_raw, zonas_cfg: list[dict]) -> dict:
+    """
+    Constrói geometrias GEE para cada zona definida no config.
+
+    Cada zona é um anel definido por buffer_ext (borda externa) e buffer_int
+    (borda interna). buffer_int=None significa sem erosão interna (núcleo).
+    Retorna dict {nome_zona: ee.Geometry}.
+    """
+    import ee
+
+    result = {}
+    for zona in zonas_cfg:
+        nome = zona["nome"]
+        ext  = zona["buffer_ext"]
+        int_ = zona["buffer_int"]
+        outer = geom_raw.buffer(-ext) if ext > 0 else geom_raw
+        if int_ is None:
+            result[nome] = outer
+        else:
+            inner = geom_raw.buffer(-int_)
+            result[nome] = outer.difference(inner)
+    return result
+
+
+def _build_region_geometries_from_db(geom_raw, regioes: list) -> dict:
+    """
+    Constrói geometrias GEE para regiões desenhadas no frontend (GeoRegion rows).
+
+    Intersecta cada polígono desenhado com a geometria da lagoa para garantir
+    que o reduceRegion opere apenas sobre pixels de água.
+    Retorna dict {nome_regiao: ee.Geometry}.
+    """
+    import ee
+
+    result = {}
+    for r in regioes:
+        coords = r.polygon
+        if not coords or len(coords) < 3:
+            logger.warning("Região '%s' tem polígono inválido — ignorada.", r.nome)
+            continue
+        try:
+            regiao_geom = ee.Geometry.Polygon([coords])
+            result[r.nome] = geom_raw.intersection(regiao_geom, maxError=10)
+        except Exception as exc:
+            logger.warning("Geometria inválida para região '%s': %s", r.nome, exc)
+    return result
+
+
+def _reduce_zone(water_img, geom, reducer) -> dict | None:
+    """Executa reduceRegion para uma zona e retorna o dict de stats ou None."""
+    try:
+        return _getinfo_with_retry(
+            water_img.select(["NDCI", "NDTI", "NDWI", "FAI"]).reduceRegion(
+                reducer=reducer,
+                geometry=geom,
+                scale=_REDUCE_SCALE_M,
+                maxPixels=_MAX_PIXELS,
+                bestEffort=True,
+            )
+        )
+    except Exception as exc:
+        logger.warning("reduceRegion falhou: %s", exc)
+        return None
+
+
 def _process_lagoa(
     lagoa_name: str,
     lagoa_cfg: dict,
@@ -148,12 +217,10 @@ def _process_lagoa(
     """
     Processa todas as imagens de uma lagoa em uma thread dedicada.
 
-    Faz 2 getInfo() por imagem (era 7):
-      1. ee.Dictionary{date, cloud_pct}  — metadados da cena
-      2. reduceRegion combinado          — mean + percentile([10,90]) + count
-
-    O semáforo _gee_semaphore é adquirido dentro de _getinfo_with_retry(),
-    garantindo throttling global entre todas as threads em execução.
+    Para cada imagem faz:
+      1. getInfo() metadados (data + cloud_pct)
+      2. reduceRegion para zona "total" (buffer negativo padrão)
+      3. reduceRegion por zona definida em lagoa_cfg["zonas"]
 
     Returns:
         {"saved": int, "skipped": int, "errors": list[str]}
@@ -162,8 +229,12 @@ def _process_lagoa(
 
     geom_raw = ee.Geometry.Polygon([lagoa_cfg["polygon"]])
     buffer_m = lagoa_cfg.get("buffer_negativo_m", 0)
-    geom     = geom_raw.buffer(-buffer_m) if buffer_m > 0 else geom_raw
+    geom_total = geom_raw.buffer(-buffer_m) if buffer_m > 0 else geom_raw
     min_pix  = _MIN_VALID_PIXELS.get(lagoa_name, _MIN_VALID_PIXELS_DEFAULT)
+
+    # Geometrias por zona concêntrica (margem/medio/nucleo — via config)
+    zonas_cfg  = lagoa_cfg.get("zonas", [])
+    zone_geoms = _build_zone_geometries(geom_raw, zonas_cfg)
 
     mes_fim_ultimo = now.month if ano_fim == now.year else 12
     d0 = f"{ano_inicio}-01-01"
@@ -176,15 +247,6 @@ def _process_lagoa(
         logger.debug("Stats: sem imagens — %s %s..%s", lagoa_name, d0, d1)
         return {"saved": 0, "skipped": 0, "errors": []}
 
-    logger.info(
-        "Stats: %s — %d imagens a processar (%s..%s)",
-        lagoa_name, n_images, d0, d1,
-    )
-
-    # Reducer combinado: 1 chamada GEE entrega mean + percentile + count para todas as bandas.
-    # sharedInputs=True aplica cada sub-reducer às mesmas bandas de entrada.
-    # Resultados usados: NDCI_mean, NDTI_mean, NDWI_mean, FAI_mean,
-    #                    NDCI_p10, NDCI_p90, NDCI_count.
     reducer = (
         ee.Reducer.mean()
         .combine(ee.Reducer.percentile([10, 90]), sharedInputs=True)
@@ -200,11 +262,32 @@ def _process_lagoa(
     img_repo = ImageRecordRepository(db)
     wq_repo  = WaterQualityRepository(db)
 
+    # Regiões desenhadas no frontend para esta lagoa
+    db_regioes   = db.query(GeoRegion).filter(
+        GeoRegion.lagoa == lagoa_name,
+        GeoRegion.ativo == 1,
+    ).all()
+    region_geoms = _build_region_geometries_from_db(geom_raw, db_regioes)
+    region_min_px = {r.nome: r.min_pixels or _MIN_VALID_PIXELS_ZONA for r in db_regioes}
+
+    # Merge: anéis concêntricos + regiões desenhadas
+    all_named_geoms = {**zone_geoms, **region_geoms}
+    all_names       = list(all_named_geoms.keys())
+    all_min_px      = {
+        **{z["nome"]: _MIN_VALID_PIXELS_ZONA for z in zonas_cfg},
+        **region_min_px,
+    }
+
+    logger.info(
+        "Stats: %s — %d imagens (%s..%s) | zonas+regiões: %s",
+        lagoa_name, n_images, d0, d1, ["total"] + all_names,
+    )
+
     try:
         for i in range(n_images):
             img = ee.Image(image_list.get(i))
 
-            # ── 1º getInfo(): data + cloud_pct juntos ─────────────────────────
+            # ── 1º getInfo(): data + cloud_pct ────────────────────────────────
             meta = _getinfo_with_retry(
                 ee.Dictionary({
                     "date":      img.date().format("YYYY-MM-dd"),
@@ -223,6 +306,7 @@ def _process_lagoa(
                         lagoa_name, wq_repo, img_repo,
                         _last_aggregated_month[0], _last_aggregated_month[0],
                         mes_unico=_last_aggregated_month[1],
+                        zonas=["total"] + all_names,
                     )
                     logger.info(
                         "Stats: agregação mensal %s %d-%02d concluída",
@@ -231,62 +315,91 @@ def _process_lagoa(
                 _saved_this_month = 0
             _last_aggregated_month = current_month
 
-            if not force and img_repo.exists("sentinel2", lagoa_name, img_date):
+            # Pula se todas as zonas já existem e não é force
+            all_exist = (
+                not force
+                and img_repo.exists("sentinel2", lagoa_name, img_date, "total")
+                and all(
+                    img_repo.exists("sentinel2", lagoa_name, img_date, z)
+                    for z in all_names
+                )
+            )
+            if all_exist:
                 skipped += 1
                 continue
 
             try:
                 water_img = water_mask(img, WATER_MASK_THRESHOLD)
 
-                # ── 2º getInfo(): mean + percentile + count em 1 chamada ───────
-                stats = _getinfo_with_retry(
-                    water_img.select(["NDCI", "NDTI", "NDWI", "FAI"]).reduceRegion(
-                        reducer=reducer,
-                        geometry=geom,
-                        scale=_REDUCE_SCALE_M,
-                        maxPixels=_MAX_PIXELS,
-                        bestEffort=True,
+                # ── zona "total" (buffer negativo padrão) ─────────────────────
+                if force or not img_repo.exists("sentinel2", lagoa_name, img_date, "total"):
+                    stats = _reduce_zone(water_img, geom_total, reducer)
+                    if stats is not None:
+                        n_pixels = int(stats.get("NDCI_count") or 0)
+                        if n_pixels >= min_pix:
+                            img_repo.upsert(
+                                satellite="sentinel2",
+                                lagoa=lagoa_name,
+                                zona="total",
+                                data=img_date,
+                                ndci_mean=_safe_float(stats.get("NDCI_mean")),
+                                ndci_p90 =_safe_float(stats.get("NDCI_p90")),
+                                ndci_p10 =_safe_float(stats.get("NDCI_p10")),
+                                ndti_mean=_safe_float(stats.get("NDTI_mean")),
+                                ndwi_mean=_safe_float(stats.get("NDWI_mean")),
+                                fai_mean =_safe_float(stats.get("FAI_mean")),
+                                n_pixels =n_pixels,
+                                cloud_pct=cloud_pct,
+                            )
+                            saved += 1
+                            _saved_this_month += 1
+                            logger.info(
+                                "Stats: %s %s total — ndci=%.4f n_pixels=%d cloud=%.1f%%",
+                                lagoa_name, date_str,
+                                _safe_float(stats.get("NDCI_mean")) or 0, n_pixels, cloud_pct or 0,
+                            )
+                        else:
+                            logger.debug(
+                                "Stats: descartando %s %s total — pixels=%d < min=%d",
+                                lagoa_name, date_str, n_pixels, min_pix,
+                            )
+                            skipped += 1
+
+                # ── zonas nomeadas (anéis concêntricos + regiões desenhadas) ──
+                for zona_nome, zona_geom in all_named_geoms.items():
+                    if not force and img_repo.exists("sentinel2", lagoa_name, img_date, zona_nome):
+                        continue
+                    stats = _reduce_zone(water_img, zona_geom, reducer)
+                    if stats is None:
+                        continue
+                    n_pixels_z = int(stats.get("NDCI_count") or 0)
+                    min_z = all_min_px.get(zona_nome, _MIN_VALID_PIXELS_ZONA)
+                    if n_pixels_z < min_z:
+                        logger.debug(
+                            "Stats: descartando %s %s %s — pixels=%d < min=%d",
+                            lagoa_name, date_str, zona_nome, n_pixels_z, min_z,
+                        )
+                        continue
+                    img_repo.upsert(
+                        satellite="sentinel2",
+                        lagoa=lagoa_name,
+                        zona=zona_nome,
+                        data=img_date,
+                        ndci_mean=_safe_float(stats.get("NDCI_mean")),
+                        ndci_p90 =_safe_float(stats.get("NDCI_p90")),
+                        ndci_p10 =_safe_float(stats.get("NDCI_p10")),
+                        ndti_mean=_safe_float(stats.get("NDTI_mean")),
+                        ndwi_mean=_safe_float(stats.get("NDWI_mean")),
+                        fai_mean =_safe_float(stats.get("FAI_mean")),
+                        n_pixels =n_pixels_z,
+                        cloud_pct=cloud_pct,
                     )
-                )
-
-                # count() em pixels não-mascarados — equivalente ao sum(mask) anterior
-                n_pixels = int(stats.get("NDCI_count") or 0)
-
-                if n_pixels < min_pix:
-                    logger.debug(
-                        "Stats: descartando %s %s — pixels=%d < min=%d",
-                        lagoa_name, date_str, n_pixels, min_pix,
+                    _saved_this_month += 1
+                    logger.info(
+                        "Stats: %s %s %s — ndci=%.4f n_pixels=%d",
+                        lagoa_name, date_str, zona_nome,
+                        _safe_float(stats.get("NDCI_mean")) or 0, n_pixels_z,
                     )
-                    skipped += 1
-                    continue
-
-                ndci_mean = _safe_float(stats.get("NDCI_mean"))
-                ndti_mean = _safe_float(stats.get("NDTI_mean"))
-                ndwi_mean = _safe_float(stats.get("NDWI_mean"))
-                fai_mean  = _safe_float(stats.get("FAI_mean"))
-                ndci_p10  = _safe_float(stats.get("NDCI_p10"))
-                ndci_p90  = _safe_float(stats.get("NDCI_p90"))
-
-                img_repo.upsert(
-                    satellite="sentinel2",
-                    lagoa=lagoa_name,
-                    data=img_date,
-                    ndci_mean=ndci_mean,
-                    ndci_p90=ndci_p90,
-                    ndci_p10=ndci_p10,
-                    ndti_mean=ndti_mean,
-                    ndwi_mean=ndwi_mean,
-                    fai_mean=fai_mean,
-                    n_pixels=n_pixels,
-                    cloud_pct=cloud_pct,
-                )
-                saved += 1
-                _saved_this_month += 1
-                logger.info(
-                    "Stats: %s %s — ndci=%.4f n_pixels=%d cloud=%.1f%%",
-                    lagoa_name, date_str,
-                    ndci_mean or 0, n_pixels, cloud_pct or 0,
-                )
 
             except Exception as exc:
                 db.rollback()
@@ -300,6 +413,7 @@ def _process_lagoa(
                 lagoa_name, wq_repo, img_repo,
                 _last_aggregated_month[0], _last_aggregated_month[0],
                 mes_unico=_last_aggregated_month[1],
+                zonas=["total"] + all_names,
             )
             logger.info(
                 "Stats: agregação mensal %s %d-%02d concluída",
@@ -403,40 +517,41 @@ def _update_monthly_aggregates(
     ano_inicio: int,
     ano_fim: int,
     mes_unico: int | None = None,
+    zonas: list[str] | None = None,
 ) -> None:
     """
     Recalcula ndci_water_quality a partir dos ImageRecords desta lagoa.
 
-    Se mes_unico for fornecido, atualiza apenas aquele mês (chamada incremental
-    ao final de cada mês durante a coleta). Caso contrário, recalcula todos
-    os meses no intervalo ano_inicio..ano_fim.
-
+    Itera sobre todas as zonas fornecidas (default: ["total"]).
+    Se mes_unico for fornecido, atualiza apenas aquele mês.
     Usa GROUP BY SQL — não faz chamadas ao GEE.
     """
-    monthly = img_repo.get_monthly_aggregation(lagoa=lagoa, satellite="sentinel2")
-    for row in monthly:
-        if not (ano_inicio <= row["ano"] <= ano_fim):
-            continue
-        if mes_unico is not None and row["mes"] != mes_unico:
-            continue
-        try:
-            wq_repo.upsert(
-                satellite="sentinel2",
-                lagoa=lagoa,
-                ano=row["ano"],
-                mes=row["mes"],
-                ndci_mean=row["ndci_mean"],
-                ndci_p90=row["ndci_p90"],
-                ndti_mean=row["ndti_mean"],
-                fai_mean=row["fai_mean"],
-                ndwi_mean=row["ndwi_mean"],
-                n_pixels=row["n_pixels"],
-            )
-        except Exception as exc:
-            logger.warning(
-                "Falha ao atualizar agregado mensal %s %d-%02d: %s",
-                lagoa, row["ano"], row["mes"], exc,
-            )
+    for zona in (zonas or ["total"]):
+        monthly = img_repo.get_monthly_aggregation(lagoa=lagoa, satellite="sentinel2", zona=zona)
+        for row in monthly:
+            if not (ano_inicio <= row["ano"] <= ano_fim):
+                continue
+            if mes_unico is not None and row["mes"] != mes_unico:
+                continue
+            try:
+                wq_repo.upsert(
+                    satellite="sentinel2",
+                    lagoa=lagoa,
+                    zona=zona,
+                    ano=row["ano"],
+                    mes=row["mes"],
+                    ndci_mean=row["ndci_mean"],
+                    ndci_p90=row["ndci_p90"],
+                    ndti_mean=row["ndti_mean"],
+                    fai_mean=row["fai_mean"],
+                    ndwi_mean=row["ndwi_mean"],
+                    n_pixels=row["n_pixels"],
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Falha ao atualizar agregado mensal %s %s %d-%02d: %s",
+                    lagoa, zona, row["ano"], row["mes"], exc,
+                )
 
 
 def _last_day(year: int, month: int) -> int:

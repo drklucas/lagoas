@@ -153,6 +153,12 @@ function fmtXLabel(label) {
   return label;
 }
 
+function fmtDateBR(label) {
+  if (!label || label.length !== 10) return label ?? '';
+  const [y, m, d] = label.split('-');
+  return `${d}/${m}/${y}`;
+}
+
 // ── Ticks sub-amostrados para eixo X legível ───────────────────────────────────
 function sparseXTicks(labels, maxVisible = 18) {
   const step = Math.max(1, Math.ceil(labels.length / maxVisible));
@@ -546,6 +552,367 @@ export function buildScatterChart(canvasId, allData) {
   return new Chart(ctx, {
     type: 'scatter',
     data: { datasets },
+    options,
+  });
+}
+
+/* ── 7. NDCI por zona espacial ────────────────────────────────────────────── */
+
+const ZONE_STYLES = {
+  margem: { color: 'rgba(247,147,26,0.90)',  fill: 'rgba(247,147,26,0.08)' },
+  medio:  { color: 'rgba(88,166,255,0.90)',  fill: 'rgba(88,166,255,0.08)' },
+  nucleo: { color: 'rgba(63,185,80,0.90)',   fill: 'rgba(63,185,80,0.08)'  },
+};
+
+const ZONE_LABELS = { margem: 'Margem', medio: 'Médio', nucleo: 'Núcleo' };
+
+/**
+ * buildZoneChart — plota NDCI médio por zona espacial (margem / médio / núcleo).
+ *
+ * @param {string} canvasId
+ * @param {string} lagoa
+ * @param {object} zonesData  resposta de /api/water-quality/{lagoa}/zones
+ */
+export function buildZoneChart(canvasId, lagoa, zonesData) {
+  const ctx = document.getElementById(canvasId);
+  if (!ctx) return null;
+
+  const zonas = zonesData.zonas ?? {};
+  if (Object.keys(zonas).length === 0) return null;
+
+  const allPeriods = [...new Set(
+    Object.values(zonas).flatMap(z => z.periodos ?? [])
+  )].sort();
+
+  const allVals = Object.values(zonas).flatMap(z => z.ndci_mean ?? []);
+  const { yMin, yMax } = computeYRange(allVals);
+
+  const datasets = Object.entries(zonas).map(([nome, d]) => {
+    const style = ZONE_STYLES[nome] ?? { color: '#ccc', fill: 'transparent' };
+    const map = {};
+    (d.periodos ?? []).forEach((p, i) => { map[p] = (d.ndci_mean ?? [])[i]; });
+    return {
+      label: ZONE_LABELS[nome] ?? nome,
+      data: allPeriods.map(p => map[p] ?? null),
+      borderColor: style.color,
+      backgroundColor: style.fill,
+      fill: true,
+      tension: 0.35,
+      pointRadius: 0,
+      pointHoverRadius: 5,
+      borderWidth: 2,
+      spanGaps: false,
+    };
+  });
+
+  const annotations = alertAnnotations(yMin, yMax);
+  const options = base({ annotation: { annotations } });
+  options.scales.x.ticks.callback = sparseXTicks(allPeriods, 18);
+  options.scales.y.min = yMin;
+  options.scales.y.max = yMax;
+  options.scales.y.title = {
+    display: true, text: 'NDCI', color: MUTED, font: { size: 10, family: FONT },
+  };
+  options.plugins.tooltip = {
+    ...options.plugins.tooltip,
+    callbacks: {
+      title: ([{ label }]) => fmtXLabel(label),
+      label: ({ dataset, raw }) =>
+        raw != null ? `${dataset.label}: ${raw.toFixed(4)}` : null,
+    },
+  };
+
+  return new Chart(ctx, {
+    type: 'line',
+    data: { labels: allPeriods, datasets },
+    options,
+  });
+}
+
+/* ── 8. Foco em zona única — NDCI (eixo esq.) + NDTI (eixo dir.) ──────────── */
+
+/**
+ * buildZoneFocusChart — dual-eixo para uma zona selecionada.
+ *
+ * Aceita dados mensais (periodos + turbidez) ou por imagem (datas + ndti_mean).
+ *
+ * @param {string} canvasId
+ * @param {object} zoneData   objeto com periodos|datas, ndci_mean, ndci_p90, turbidez|ndti_mean
+ */
+export function buildZoneFocusChart(canvasId, zoneData) {
+  const ctx = document.getElementById(canvasId);
+  if (!ctx) return null;
+
+  const periodos = zoneData.datas    ?? zoneData.periodos  ?? [];
+  const isImageSeries = Boolean(zoneData.datas);
+  const ndciMean = zoneData.ndci_mean ?? [];
+  const ndciP90  = zoneData.ndci_p90  ?? [];
+  const turbidez = zoneData.turbidez  ?? zoneData.ndti_mean ?? [];
+
+  const hasP90 = ndciP90.some(v => v != null);
+  const allNdci = [...ndciMean, ...(hasP90 ? ndciP90 : [])];
+  const { yMin, yMax } = computeYRange(allNdci);
+
+  const datasets = [];
+
+  if (hasP90) {
+    datasets.push({
+      label: 'NDCI P90',
+      data: ndciP90,
+      borderColor: 'rgba(248,81,73,0.70)',
+      backgroundColor: 'transparent',
+      fill: false,
+      tension: 0.4,
+      pointRadius: 0,
+      pointHoverRadius: 4,
+      borderWidth: 1.5,
+      borderDash: [5, 4],
+      yAxisID: 'y',
+      spanGaps: false,
+    });
+  }
+
+  datasets.push({
+    label: 'NDCI médio',
+    data: ndciMean,
+    borderColor: '#2188ff',
+    backgroundColor: 'rgba(33,136,255,0.07)',
+    fill: !hasP90,
+    tension: 0.4,
+    pointRadius: periodos.length > 60 ? 1 : 3,
+    pointHoverRadius: 6,
+    pointBackgroundColor: ndciMean.map(v => classifyNdci(v).color),
+    pointBorderColor: 'transparent',
+    pointHoverBorderColor: '#ffffff',
+    pointHoverBorderWidth: 2,
+    borderWidth: 2.5,
+    yAxisID: 'y',
+    spanGaps: false,
+  });
+
+  datasets.push({
+    label: 'NDTI (Turbidez)',
+    data: turbidez,
+    borderColor: 'rgba(210,153,34,0.85)',
+    backgroundColor: 'transparent',
+    fill: false,
+    tension: 0.35,
+    pointRadius: 0,
+    pointHoverRadius: 4,
+    borderWidth: 2,
+    borderDash: [4, 3],
+    yAxisID: 'y2',
+    spanGaps: false,
+  });
+
+  const options = base({
+    annotation: { annotations: alertAnnotations(yMin, yMax) },
+    tooltip: {
+      backgroundColor: '#1c2330',
+      borderColor: '#30363d',
+      borderWidth: 1,
+      titleColor: TEXT,
+      bodyColor: MUTED,
+      padding: 10,
+      cornerRadius: 6,
+      callbacks: {
+        title: ([{ label }]) => (isImageSeries ? fmtDateBR(label) : fmtXLabel(label)),
+        label: ({ dataset, raw }) =>
+          raw != null ? `${dataset.label}: ${raw.toFixed(4)}` : null,
+      },
+    },
+  });
+
+  options.interaction = { mode: 'index', intersect: false };
+  const _step = Math.max(1, Math.ceil(periodos.length / 18));
+  options.scales.x.ticks.callback = (_, i) => {
+    if (i % _step !== 0) return '';
+    const label = periodos[i] ?? '';
+    return isImageSeries ? fmtDateBR(label) : fmtXLabel(label);
+  };
+
+  options.scales.y = {
+    position: 'left',
+    min: yMin,
+    max: yMax,
+    ticks: { color: MUTED, font: { family: FONT, size: 10 } },
+    grid:  { color: GRID },
+    border: { color: GRID },
+    title: { display: true, text: 'NDCI', color: MUTED, font: { size: 10, family: FONT } },
+  };
+  options.scales.y2 = {
+    position: 'right',
+    ticks: { color: 'rgba(210,153,34,0.80)', font: { family: FONT, size: 10 } },
+    grid:  { drawOnChartArea: false, color: GRID },
+    border: { color: GRID },
+    title: {
+      display: true,
+      text: 'NDTI',
+      color: 'rgba(210,153,34,0.80)',
+      font: { size: 10, family: FONT },
+    },
+  };
+
+  return new Chart(ctx, {
+    type: 'line',
+    data: { labels: periodos, datasets },
+    options,
+  });
+}
+
+// ── NDVI — anel de vegetação terrestre ────────────────────────────────────────
+const GREEN      = 'rgba(63, 185, 80, 1)';
+const GREEN_SOFT = 'rgba(63, 185, 80, 0.18)';
+
+export function buildNdviChart(canvasId, lagoa, data) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return null;
+
+  const labels = data.periodos ?? data.datas ?? [];
+  const mean   = data.ndvi_mean ?? [];
+  const p90    = data.ndvi_p90  ?? [];
+  const p10    = data.ndvi_p10  ?? [];
+  const nPixVals = data.n_pixels ?? [];
+
+  const hasBand = p90.some(v => v != null) && p10.some(v => v != null);
+  // índice do dataset principal (mean) depende de hasBand
+  const meanIdx = hasBand ? 2 : 0;
+
+  const MONTHS_PT = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+  const fmtPeriod = (label) => {
+    if (!label) return '';
+    if (label.length === 7) {          // "2023-05" → "Mai 2023"
+      const [y, m] = label.split('-');
+      return `${MONTHS_PT[parseInt(m, 10) - 1]} ${y}`;
+    }
+    if (label.length === 10) {         // "2023-05-15" → "15 Mai 2023"
+      const [y, m, d] = label.split('-');
+      return `${parseInt(d, 10)} ${MONTHS_PT[parseInt(m, 10) - 1]} ${y}`;
+    }
+    return label;
+  };
+
+  // ── Tooltip externo (mesmo padrão de buildSeriesChart) ─────────────────────
+  const externalTooltip = ({ chart, tooltip }) => {
+    const wrap = chart.canvas.parentNode;
+    let el = wrap.querySelector('.s-tip');
+    if (!el) {
+      el = document.createElement('div');
+      el.className = 's-tip';
+      wrap.appendChild(el);
+    }
+    if (!tooltip.opacity) { el.style.opacity = '0'; return; }
+
+    const dp = tooltip.dataPoints?.find(p => p.datasetIndex === meanIdx);
+    if (!dp) { el.style.opacity = '0'; return; }
+
+    const idx = dp.dataIndex;
+    const v   = dp.parsed.y;
+    if (v == null) { el.style.opacity = '0'; return; }
+
+    const period = fmtPeriod(labels[idx] ?? '');
+    const vp90   = p90[idx];
+    const vp10   = p10[idx];
+    const npx    = nPixVals[idx];
+    const color  = v >= 0.5 ? '#3fb950' : v >= 0.2 ? '#d29922' : '#f85149';
+
+    el.innerHTML = `
+      <div class="s-tip-head">
+        <span class="s-tip-period">${period}</span>
+        <span class="s-tip-dot" style="background:${color}"></span>
+      </div>
+      <div class="s-tip-ndci" style="color:${color}">${v.toFixed(4)}</div>
+      ${vp90 != null ? `<div class="s-tip-row"><span>P90</span><span>${vp90.toFixed(4)}</span></div>` : ''}
+      ${vp10 != null ? `<div class="s-tip-row"><span>P10</span><span>${vp10.toFixed(4)}</span></div>` : ''}
+      ${npx  != null ? `<div class="s-tip-row"><span>Pixels</span><span>${npx.toLocaleString('pt-BR')}</span></div>` : ''}
+    `;
+    el.style.opacity = '1';
+
+    const cw   = chart.canvas.offsetWidth;
+    const tipW = 160;
+    const x    = tooltip.caretX;
+    const y    = tooltip.caretY;
+    el.style.left = `${x + 14 + tipW > cw ? x - tipW - 10 : x + 14}px`;
+    el.style.top  = `${Math.max(6, y - 28)}px`;
+  };
+
+  const options = base({
+    annotation: {
+      annotations: {
+        healthy_line: {
+          type: 'line', yMin: 0.5, yMax: 0.5,
+          borderColor: 'rgba(63,185,80,0.50)',
+          borderWidth: 1.5, borderDash: [6, 3],
+          label: {
+            display: true, content: 'Vegetação densa (NDVI ≥ 0.5)',
+            position: 'start', color: 'rgba(63,185,80,0.80)',
+            font: { size: 9, family: FONT },
+            backgroundColor: 'rgba(13,17,23,0.80)',
+            padding: { x: 6, y: 3 }, borderRadius: 3,
+          },
+        },
+        sparse_line: {
+          type: 'line', yMin: 0.2, yMax: 0.2,
+          borderColor: 'rgba(210,153,34,0.45)',
+          borderWidth: 1, borderDash: [4, 4],
+          label: {
+            display: true, content: 'Vegetação esparsa (0.2)',
+            position: 'end', color: 'rgba(210,153,34,0.65)',
+            font: { size: 9, family: FONT },
+            backgroundColor: 'transparent', padding: 0,
+          },
+        },
+      },
+    },
+    tooltip: { enabled: false, external: externalTooltip, mode: 'index', intersect: false },
+  });
+
+  options.scales.y.min = 0;
+  options.scales.y.max = 1;
+  options.scales.y.title = {
+    display: true, text: 'NDVI', color: MUTED, font: { size: 10, family: FONT },
+  };
+  options.scales.x.ticks.callback = sparseXTicks(labels, 18);
+
+  const datasets = [];
+
+  if (hasBand) {
+    datasets.push({
+      label: 'P10–P90',
+      data:  p90,
+      fill: '+1',
+      backgroundColor: GREEN_SOFT,
+      borderColor: 'transparent',
+      pointRadius: 0,
+      tension: 0.35,
+    });
+    datasets.push({
+      label: 'P10',
+      data:  p10,
+      fill: false,
+      borderColor: 'rgba(63,185,80,0.25)',
+      borderWidth: 1,
+      borderDash: [3, 3],
+      pointRadius: 0,
+      tension: 0.35,
+    });
+  }
+
+  datasets.push({
+    label: 'NDVI médio',
+    data: mean,
+    borderColor: GREEN,
+    borderWidth: 2,
+    pointRadius: 3,
+    pointHoverRadius: 6,
+    pointBackgroundColor: GREEN,
+    tension: 0.35,
+    fill: false,
+  });
+
+  return new Chart(canvas, {
+    type: 'line',
+    data: { labels, datasets },
     options,
   });
 }

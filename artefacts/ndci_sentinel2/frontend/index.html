@@ -4,12 +4,14 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>NDCI — Lagoas do Litoral Norte RS</title>
-  <link rel="stylesheet" href="/static/css/app.css" />
+  <link rel="stylesheet" href="/static/css/app.css?v=20260430-01" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css" />
+  <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
 </head>
 <body>
 
@@ -67,6 +69,13 @@
       </svg>
       Tendências
     </button>
+    <button class="tab-btn" data-tab="vegetation">
+      <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+        <path d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1M0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8"/>
+        <path d="M6.5 5.5a.5.5 0 0 1 .5-.5h2a.5.5 0 0 1 .354.854l-1.5 1.5a.5.5 0 0 1-.708 0L5.646 5.854A.5.5 0 0 1 6 5zm1 3.5a.5.5 0 0 1 .5.5v2.5a.5.5 0 0 1-1 0V9a.5.5 0 0 1 .5-.5"/>
+      </svg>
+      Vegetação
+    </button>
   </nav>
 
   <!-- ── Dashboard tab ──────────────────────────────────────────────────── -->
@@ -85,6 +94,21 @@
       <div id="kpi-grid" class="kpi-grid"></div>
     </section>
 
+    <!-- Filtros compartilhados — afetam os 3 gráficos de série -->
+    <div class="shared-series-controls">
+      <span class="shared-controls-label">Séries temporais</span>
+      <label class="view-toggle-label" title="Alternar entre agregação mensal e imagens individuais (aplica-se a todos os gráficos abaixo)">
+        <input type="checkbox" id="view-toggle" />
+        <span class="view-toggle-track"><span class="view-toggle-thumb"></span></span>
+        <span class="view-toggle-text">Por imagem</span>
+      </label>
+      <div class="series-date-filter" title="Filtrar período exibido (aplica-se a todos os gráficos abaixo)">
+        <input type="month" id="series-date-from" title="Data inicial" />
+        <span class="filter-sep">—</span>
+        <input type="month" id="series-date-to" title="Data final" />
+      </div>
+    </div>
+
     <!-- Série temporal -->
     <section class="card card-series">
       <div class="chart-header series-header">
@@ -94,16 +118,14 @@
         </div>
         <div class="chart-controls series-header-right">
           <select id="lagoa-select" class="lagoa-select"></select>
-          <label class="view-toggle-label" title="Alternar entre agregação mensal e imagens individuais">
-            <input type="checkbox" id="view-toggle" />
-            <span class="view-toggle-track"><span class="view-toggle-thumb"></span></span>
-            <span class="view-toggle-text">Por imagem</span>
-          </label>
-          <div class="series-date-filter" title="Filtrar período exibido">
-            <input type="month" id="series-date-from" title="Data inicial" />
-            <span class="filter-sep">—</span>
-            <input type="month" id="series-date-to" title="Data final" />
-          </div>
+          <button id="zone-toggle-btn" class="btn btn-zone" title="Visualizar NDCI por zona espacial (margem / médio / núcleo)">
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+              <circle cx="8" cy="8" r="7" fill="none" stroke="currentColor" stroke-width="1.5"/>
+              <circle cx="8" cy="8" r="4.5" fill="none" stroke="currentColor" stroke-width="1.5"/>
+              <circle cx="8" cy="8" r="2" fill="currentColor"/>
+            </svg>
+            Zonas
+          </button>
         </div>
       </div>
       <div class="chart-wrap chart-wrap-series">
@@ -117,6 +139,41 @@
         <span class="stl-chip stl-bloom"><span class="stl-dot"></span>Eflorescência ≈14 µg/L</span>
       </div>
       <div id="point-detail" class="point-detail"></div>
+    </section>
+
+    <!-- Análise por zona -->
+    <section id="zones-card" class="card" style="display:none">
+      <div class="chart-header series-header">
+        <div class="series-header-left">
+          <span class="card-title series-title">NDCI · NDTI por Zona</span>
+          <span id="zones-lagoa-tag" class="series-lagoa-tag">—</span>
+        </div>
+        <div id="zones-selector" class="zones-selector"></div>
+      </div>
+      <div class="chart-wrap" style="height:280px">
+        <canvas id="chart-zones-focus"></canvas>
+      </div>
+      <p id="zones-no-data" class="analytics-ref" style="display:none;margin:12px 0 4px">
+        Nenhum dado por zona para esta lagoa. Execute a coleta com zonas configuradas.
+      </p>
+    </section>
+
+    <!-- Análise por região desenhada -->
+    <section id="geo-regions-card" class="card" style="display:none">
+      <div class="chart-header series-header">
+        <div class="series-header-left">
+          <span class="card-title series-title">NDCI · NDTI por Região Desenhada</span>
+          <span id="geo-regions-lagoa-tag" class="series-lagoa-tag">—</span>
+        </div>
+        <div id="geo-regions-selector" class="zones-selector"></div>
+      </div>
+      <div class="chart-wrap" style="height:280px">
+        <canvas id="chart-geo-regions-focus"></canvas>
+      </div>
+      <p class="analytics-ref" style="margin:8px 0 4px">
+        Regiões desenhadas no mapa. Dados disponíveis após executar
+        <code>POST /api/workers/collect-stats</code> com as regiões ativas.
+      </p>
     </section>
 
     <!-- Índices + Comparação -->
@@ -212,6 +269,10 @@
           <option value="sem_dados">Sem dados</option>
         </select>
 
+        <select id="filter-zona" title="Filtrar por zona / região">
+          <option value="total">Zona: total</option>
+        </select>
+
         <div class="filter-year-range">
           <span class="filter-label">Ano</span>
           <input type="number" id="filter-ano-de"  placeholder="De"   min="2017" max="2030" />
@@ -233,12 +294,15 @@
           <thead id="table-head">
             <tr>
               <th data-col="lagoa">Lagoa</th>
-              <th data-col="periodo" class="sort-desc">Período</th>
+              <th data-col="zona">Zona</th>
+              <th data-col="data" class="sort-desc">Data</th>
               <th data-col="ndci_mean">NDCI médio</th>
               <th data-col="ndci_p90">NDCI p90</th>
+              <th data-col="ndci_p10">NDCI p10</th>
               <th data-col="turbidez">Turbidez (NDTI)</th>
               <th data-col="ndwi_mean">NDWI</th>
               <th data-col="n_pixels">Pixels</th>
+              <th data-col="cloud_pct">Nuvens</th>
               <th data-col="status">Status</th>
             </tr>
           </thead>
@@ -266,7 +330,7 @@
     </section>
   </div><!-- /tab-table -->
 
-  <!-- ── Map tab ────────────────────────────────────────────────────────────── -->
+  <!-- ── Map tab ───────────────────────────���────────────────────────────────── -->
   <div id="tab-map" style="display:none">
 
     <!-- Controls bar -->
@@ -275,13 +339,65 @@
       <select id="map-lagoa"  title="Lagoa"></select>
       <select id="map-period" title="Período (YYYY-MM)"></select>
       <span id="map-status-msg" class="map-status-msg" style="display:none"></span>
+      <button id="regions-toggle-btn" class="btn btn-regions" title="Gerenciar regiões de análise">
+        <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <polygon points="2,14 6,2 10,10 13,6 14,14"/>
+        </svg>
+        Regiões
+      </button>
     </div>
 
-    <!-- Map + legend overlay -->
-    <div class="map-wrap">
-      <div id="map-container"></div>
-      <div id="map-legend" class="map-legend" style="display:none"></div>
-    </div>
+    <!-- Map + side panel -->
+    <div class="map-layout">
+
+      <!-- Map + legend overlay -->
+      <div class="map-wrap">
+        <div id="map-container"></div>
+        <div id="map-legend" class="map-legend" style="display:none"></div>
+      </div>
+
+      <!-- Regions side panel (hidden until toggled) -->
+      <div id="regions-panel" class="regions-panel">
+
+        <div class="regions-panel-header">
+          <span class="regions-panel-title">Regiões de análise</span>
+          <button id="regions-panel-close" class="btn-icon" title="Fechar painel">×</button>
+        </div>
+
+        <div class="regions-panel-lagoa">
+          <select id="regions-lagoa-select" title="Lagoa"></select>
+        </div>
+
+        <div id="regions-list" class="regions-list"></div>
+
+        <div id="regions-footer" class="regions-panel-footer">
+          <button id="draw-region-btn" class="btn btn-primary btn-sm">
+            <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <polygon points="2,14 6,2 10,10 13,6 14,14"/>
+            </svg>
+            Desenhar região
+          </button>
+        </div>
+
+        <!-- Formulário (visível após desenhar o polígono) -->
+        <div id="draw-form" class="draw-form" style="display:none">
+          <p class="draw-form-hint">Polígono desenhado. Preencha os dados e salve.</p>
+          <input type="text" id="region-nome" placeholder="Nome da região *" autocomplete="off" />
+          <input type="text" id="region-descricao" placeholder="Descrição (opcional)" autocomplete="off" />
+          <select id="region-categoria">
+            <option value="setor_lagoa">Setor da lagoa</option>
+            <option value="area_estudo">Área de estudo</option>
+            <option value="bacia">Bacia hidrográfica</option>
+          </select>
+          <div class="draw-form-actions">
+            <button id="save-region-btn" class="btn btn-primary btn-sm">Salvar</button>
+            <button id="cancel-draw-btn" class="btn btn-ghost btn-sm">Cancelar</button>
+          </div>
+        </div>
+
+      </div><!-- /regions-panel -->
+
+    </div><!-- /map-layout -->
 
   </div><!-- /tab-map -->
 
@@ -332,8 +448,57 @@
 
   </div><!-- /tab-analytics -->
 
+  <!-- ── Vegetation tab ───────────────────────────────────────────────────── -->
+  <div id="tab-vegetation" class="tab-panel" style="display:none">
+
+    <section class="card card-series">
+      <div class="chart-header series-header">
+        <div class="series-header-left">
+          <span class="card-title series-title">NDVI — Anel de Vegetação Terrestre</span>
+          <span id="veg-lagoa-tag" class="series-lagoa-tag">—</span>
+        </div>
+        <div class="chart-controls series-header-right">
+          <select id="veg-lagoa-select"></select>
+          <label class="view-toggle-label" title="Alternar entre agregação mensal e imagens individuais">
+            <input type="checkbox" id="veg-view-toggle" />
+            <span class="view-toggle-track"><span class="view-toggle-thumb"></span></span>
+            <span class="view-toggle-text">Por imagem</span>
+          </label>
+        </div>
+      </div>
+      <div class="chart-wrap chart-wrap-series">
+        <canvas id="chart-ndvi"></canvas>
+      </div>
+      <div class="series-threshold-legend">
+        <span class="stl-chip" style="color:rgba(63,185,80,0.9)"><span class="stl-dot" style="background:rgba(63,185,80,1)"></span>Densa NDVI ≥ 0.5</span>
+        <span class="stl-chip" style="color:rgba(210,153,34,0.9)"><span class="stl-dot" style="background:rgba(210,153,34,1)"></span>Esparsa NDVI 0.2–0.5</span>
+        <span class="stl-chip" style="color:rgba(248,81,73,0.9)"><span class="stl-dot" style="background:rgba(248,81,73,1)"></span>Solo/água NDVI &lt; 0.2</span>
+      </div>
+      <p class="analytics-ref" style="margin-top:8px">
+        Anel de vegetação terrestre por lagoa · distância mínima da beira configurável por lagoa
+        (veg_inner_m / veg_outer_m) · máscara NDWI &lt; 0 · Sentinel-2 / GEE
+      </p>
+      <div id="veg-empty" class="empty-state" style="display:none">
+        <span class="empty-icon">🌿</span>
+        <span>Nenhum dado de vegetação ainda.</span>
+        <code>POST /api/workers/collect-ndvi?ano_inicio=2017</code>
+      </div>
+    </section>
+
+    <!-- Comparação entre lagoas -->
+    <section class="card">
+      <div class="chart-header">
+        <span class="card-title">NDVI médio — Comparação entre lagoas</span>
+      </div>
+      <div class="chart-wrap" style="height:280px">
+        <canvas id="chart-ndvi-compare"></canvas>
+      </div>
+    </section>
+
+  </div><!-- /tab-vegetation -->
+
 </div><!-- /content -->
 
-<script type="module" src="/static/js/app.js"></script>
+<script type="module" src="/static/js/app.js?v=20260430-01"></script>
 </body>
 </html>

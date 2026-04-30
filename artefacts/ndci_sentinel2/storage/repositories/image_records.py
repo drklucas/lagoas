@@ -34,11 +34,12 @@ class ImageRecordRepository:
         fai_mean: float | None,
         n_pixels: int | None,
         cloud_pct: float | None,
+        zona: str = "total",
     ) -> ImageRecord:
         """Insere ou atualiza um registro por imagem individual."""
         rec = (
             self._db.query(ImageRecord)
-            .filter_by(satellite=satellite, lagoa=lagoa, data=data)
+            .filter_by(satellite=satellite, lagoa=lagoa, data=data, zona=zona)
             .first()
         )
         if rec:
@@ -55,6 +56,7 @@ class ImageRecordRepository:
             rec = ImageRecord(
                 satellite=satellite,
                 lagoa=lagoa,
+                zona=zona,
                 data=data,
                 ano=data.year,
                 mes=data.month,
@@ -77,22 +79,62 @@ class ImageRecordRepository:
         self,
         lagoa: str,
         satellite: str = "sentinel2",
+        zona: str = "total",
     ) -> list[ImageRecord]:
         """Retorna toda a série por imagem de uma lagoa, ordenada por data."""
         return (
             self._db.query(ImageRecord)
-            .filter_by(satellite=satellite, lagoa=lagoa)
+            .filter_by(satellite=satellite, lagoa=lagoa, zona=zona)
             .order_by(ImageRecord.data)
             .all()
         )
+
+    def get_all_series(
+        self,
+        satellite: str = "sentinel2",
+        zona: str = "total",
+    ) -> dict[str, list[ImageRecord]]:
+        """Retorna registros por imagem de todas as lagoas para uma zona."""
+        rows = (
+            self._db.query(ImageRecord)
+            .filter_by(satellite=satellite, zona=zona)
+            .order_by(ImageRecord.lagoa, ImageRecord.data)
+            .all()
+        )
+        result: dict[str, list[ImageRecord]] = {}
+        for r in rows:
+            result.setdefault(r.lagoa, []).append(r)
+        return result
+
+    def get_zones_series(
+        self,
+        lagoa: str,
+        satellite: str = "sentinel2",
+    ) -> dict[str, list[ImageRecord]]:
+        """Retorna séries por imagem agrupadas por zona (exclui 'total')."""
+        rows = (
+            self._db.query(ImageRecord)
+            .filter(
+                ImageRecord.satellite == satellite,
+                ImageRecord.lagoa == lagoa,
+                ImageRecord.zona != "total",
+            )
+            .order_by(ImageRecord.zona, ImageRecord.data)
+            .all()
+        )
+        result: dict[str, list[ImageRecord]] = {}
+        for r in rows:
+            result.setdefault(r.zona, []).append(r)
+        return result
 
     def get_monthly_aggregation(
         self,
         lagoa: str,
         satellite: str = "sentinel2",
+        zona: str = "total",
     ) -> list[dict]:
         """
-        Agrega os registros por imagem em resumos mensais.
+        Agrega os registros por imagem em resumos mensais para uma zona.
 
         Retorna lista de dicts com ano, mes, ndci_mean (média das imagens
         do mês), ndci_p90 (máximo dos P90 individuais), ndci_p10 (mínimo dos
@@ -111,7 +153,7 @@ class ImageRecordRepository:
                 func.sum(ImageRecord.n_pixels).label("n_pixels"),
                 func.count(ImageRecord.id).label("n_images"),
             )
-            .filter_by(satellite=satellite, lagoa=lagoa)
+            .filter_by(satellite=satellite, lagoa=lagoa, zona=zona)
             .group_by(ImageRecord.ano, ImageRecord.mes)
             .order_by(ImageRecord.ano, ImageRecord.mes)
             .all()
@@ -137,10 +179,11 @@ class ImageRecordRepository:
         satellite: str,
         lagoa: str,
         data: date,
+        zona: str = "total",
     ) -> bool:
-        """Verifica se já existe registro para esta cena."""
+        """Verifica se já existe registro para esta cena e zona."""
         return (
             self._db.query(ImageRecord.id)
-            .filter_by(satellite=satellite, lagoa=lagoa, data=data)
+            .filter_by(satellite=satellite, lagoa=lagoa, data=data, zona=zona)
             .first()
         ) is not None

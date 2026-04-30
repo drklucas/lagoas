@@ -188,6 +188,47 @@ async def run_warm_tile_cache(
     )
 
 
+# ── Worker: NDVI no anel de vegetação ────────────────────────────────────────
+
+def _run_collect_ndvi_sync(ano_inicio, ano_fim, lagoas, force):
+    from ingestion.sentinel2.ndvi_worker import _sync_collect_ndvi
+    logger.info(
+        "collect-ndvi iniciado — anos=%d..%s lagoas=%s force=%s",
+        ano_inicio, ano_fim or "atual", lagoas or "todas", force,
+    )
+    result = _sync_collect_ndvi(ano_inicio=ano_inicio, ano_fim=ano_fim, lagoas=lagoas, force=force)
+    logger.info(
+        "collect-ndvi concluído — salvos=%d pulados=%d erros=%d",
+        result.get("saved", 0), result.get("skipped", 0), len(result.get("errors", [])),
+    )
+    if result.get("errors"):
+        for e in result["errors"]:
+            logger.warning("collect-ndvi erro: %s", e)
+
+
+@router.post("/collect-ndvi", response_model=WorkerResult)
+async def run_collect_ndvi(
+    background_tasks: BackgroundTasks,
+    ano_inicio: int = Query(2017, ge=2017, le=2030),
+    ano_fim:    int | None = Query(None),
+    lagoa:      str | None = Query(None, description="Lagoa específica ou todas se omitido"),
+    force:      bool = Query(False, description="Sobrescreve dados já existentes"),
+):
+    """
+    Coleta NDVI no anel de vegetação terrestre (veg_inner_m–veg_outer_m fora da lagoa).
+
+    **Roda em background.** Acompanhe: `docker compose logs -f api`
+    """
+    lagoas = [lagoa] if lagoa else None
+    background_tasks.add_task(_run_collect_ndvi_sync, ano_inicio, ano_fim, lagoas, force)
+    anos_label   = f"{ano_inicio}–{ano_fim or 'atual'}"
+    lagoas_label = lagoa or "todas as lagoas"
+    return WorkerResult(
+        status="started",
+        message=f"Coleta NDVI iniciada em background: {anos_label}, {lagoas_label}. Acompanhe: docker compose logs -f api",
+    )
+
+
 # ── Status do banco ────────────────────────────────────────────────────────────
 
 @router.get("/status")

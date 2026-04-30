@@ -3,8 +3,12 @@
  *
  * Auto-conecta aos elementos fixos do HTML:
  *   #table-body, #table-head, #record-count, #pg-info, #pagination
- *   #table-search, #filter-lagoa, #filter-status
+ *   #table-search, #filter-lagoa, #filter-status, #filter-zona
  *   #filter-ano-de, #filter-ano-ate, #page-size, #clear-filters
+ *
+ * Callback externo (gerenciado pelo app.js):
+ *   this.onZonaChange(zona) — chamado quando o filtro de zona muda.
+ *   O chamador é responsável por buscar novos dados e chamar load() novamente.
  */
 
 import { classifyNdci, fmtNdci, fmtNum } from './utils.js';
@@ -31,29 +35,54 @@ export class DataTable {
       anoMax: null,
     };
 
+    /** Callback externo: (zona: string) => void */
+    this.onZonaChange = null;
+
     this._bindEvents();
   }
 
   // ── Carga de dados ──────────────────────────────────────────────────────────
 
-  load(allData) {
+  /** Carrega registros por imagem individual (fonte primária da tabela). */
+  loadImages(allData, zona = 'total') {
     this._rows = [];
     for (const [lagoa, d] of Object.entries(allData)) {
-      d.periodos.forEach((periodo, i) => {
+      (d.datas ?? []).forEach((data, i) => {
         this._rows.push({
           lagoa,
-          periodo,
+          zona,
+          data,
           ndci_mean: d.ndci_mean[i],
-          ndci_p90:  d.ndci_p90?.[i] ?? null,
-          turbidez:  d.turbidez[i],
-          ndwi_mean: d.ndwi_mean[i],
-          n_pixels:  d.n_pixels[i],
+          ndci_p90:  d.ndci_p90?.[i]  ?? null,
+          ndci_p10:  d.ndci_p10?.[i]  ?? null,
+          turbidez:  d.ndti_mean?.[i] ?? null,
+          ndwi_mean: d.ndwi_mean?.[i] ?? null,
+          n_pixels:  d.n_pixels?.[i]  ?? null,
+          cloud_pct: d.cloud_pct?.[i] ?? null,
           status:    classifyNdci(d.ndci_mean[i]).status,
         });
       });
     }
+    this._sort = { key: 'data', dir: 'desc' };
     this._populateLagoaFilter();
     this._applyFilters();
+  }
+
+  /** @deprecated use loadImages() — mantido para compatibilidade temporária */
+  load(allData, zona = 'total') {
+    this.loadImages(allData, zona);
+  }
+
+  /** Atualiza as opções do select #filter-zona com as zonas disponíveis. */
+  setZonaOptions(zones) {
+    const sel = document.getElementById('filter-zona');
+    if (!sel) return;
+    const current = sel.value;
+    const LABELS = { total: 'Zona: total', margem: 'Margem', medio: 'Médio', nucleo: 'Núcleo' };
+    sel.innerHTML = zones.map(z =>
+      `<option value="${z}">${LABELS[z] ?? z}</option>`
+    ).join('');
+    if (zones.includes(current)) sel.value = current;
   }
 
   // ── Eventos ────────────────────────────────────────────────────────────────
@@ -72,6 +101,10 @@ export class DataTable {
     on('filter-status', 'change', e => {
       this._filters.status = e.target.value;
       this._applyFilters();
+    });
+    on('filter-zona', 'change', e => {
+      // zona muda a fonte de dados — delega ao app.js via callback
+      this.onZonaChange?.(e.target.value);
     });
     on('filter-ano-de', 'input', e => {
       this._filters.anoMin = e.target.value ? parseInt(e.target.value) : null;
@@ -108,7 +141,14 @@ export class DataTable {
     this._filters = { search: '', lagoa: '', status: '', anoMin: null, anoMax: null };
     ['table-search', 'filter-lagoa', 'filter-status', 'filter-ano-de', 'filter-ano-ate']
       .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
-    this._applyFilters();
+    // Reseta zona para 'total' via callback (recarrega dados)
+    const zonaSel = document.getElementById('filter-zona');
+    if (zonaSel && zonaSel.value !== 'total') {
+      zonaSel.value = 'total';
+      this.onZonaChange?.('total');
+    } else {
+      this._applyFilters();
+    }
   }
 
   _applyFilters() {
@@ -119,16 +159,17 @@ export class DataTable {
       if (status && r.status !== status) return false;
 
       if (anoMin !== null || anoMax !== null) {
-        const ano = parseInt(r.periodo.substring(0, 4));
+        const ano = parseInt((r.data ?? '').substring(0, 4));
         if (anoMin !== null && ano < anoMin) return false;
         if (anoMax !== null && ano > anoMax) return false;
       }
 
       if (search) {
         return (
-          r.lagoa.toLowerCase().includes(search)  ||
-          r.periodo.includes(search)               ||
-          r.status.includes(search)
+          r.lagoa.toLowerCase().includes(search) ||
+          (r.data ?? '').includes(search)         ||
+          r.status.includes(search)               ||
+          r.zona.toLowerCase().includes(search)
         );
       }
       return true;
@@ -186,12 +227,15 @@ export class DataTable {
       this._tbody.innerHTML = page.map(r => `
         <tr>
           <td>${r.lagoa}</td>
-          <td>${r.periodo}</td>
+          <td><span class="zona-badge${r.zona === 'total' ? ' zona-total' : ''}">${r.zona}</span></td>
+          <td class="td-date">${r.data ?? '—'}</td>
           <td>${fmtNdci(r.ndci_mean)}</td>
           <td class="${r.ndci_p90 == null ? 'null' : ''}">${fmtNdci(r.ndci_p90)}</td>
+          <td class="${r.ndci_p10 == null ? 'null' : ''}">${fmtNdci(r.ndci_p10)}</td>
           <td>${fmtNum(r.turbidez, 4)}</td>
           <td>${fmtNum(r.ndwi_mean, 4)}</td>
           <td>${r.n_pixels?.toLocaleString() ?? '<span class="null">—</span>'}</td>
+          <td class="${r.cloud_pct == null ? 'null' : ''}">${r.cloud_pct != null ? r.cloud_pct.toFixed(1) + '%' : '—'}</td>
           <td><span class="badge badge-${r.status}">${r.status.replace('_', ' ')}</span></td>
         </tr>`).join('');
     }
@@ -215,15 +259,18 @@ export class DataTable {
   // ── Export CSV ─────────────────────────────────────────────────────────────
 
   _exportCsv() {
-    const headers = ['Lagoa', 'Período', 'NDCI médio', 'NDCI P90', 'Turbidez (NDTI)', 'NDWI', 'Pixels válidos', 'Status'];
+    const headers = ['Lagoa', 'Zona', 'Data', 'NDCI médio', 'NDCI P90', 'NDCI P10', 'Turbidez (NDTI)', 'NDWI', 'Pixels válidos', 'Nuvens (%)', 'Status'];
     const data    = this._filteredRows.map(r => [
       r.lagoa,
-      r.periodo,
+      r.zona,
+      r.data       ?? '',
       r.ndci_mean  ?? '',
       r.ndci_p90   ?? '',
+      r.ndci_p10   ?? '',
       r.turbidez   ?? '',
       r.ndwi_mean  ?? '',
       r.n_pixels   ?? '',
+      r.cloud_pct  ?? '',
       r.status,
     ]);
 
